@@ -1,8 +1,8 @@
 diff --git a/core/core.services.yml b/core/core.services.yml
-index 362f236792a19f2876c95eee88e03acb08e0471c..9ab626b5ace589dfea3566f4383d20c4142f4958 100644
+index d7a2d63fd06..3e152b78fe6 100644
 --- a/core/core.services.yml
 +++ b/core/core.services.yml
-@@ -531,6 +531,7 @@ services:
+@@ -496,6 +496,7 @@ services:
    Drupal\Core\Form\FormSubmitterInterface: '@form_submitter'
    form_error_handler:
      class: Drupal\Core\Form\FormErrorHandler
@@ -11,7 +11,7 @@ index 362f236792a19f2876c95eee88e03acb08e0471c..9ab626b5ace589dfea3566f4383d20c4
    form_cache:
      class: Drupal\Core\Form\FormCache
 diff --git a/core/lib/Drupal/Core/Form/FormErrorHandler.php b/core/lib/Drupal/Core/Form/FormErrorHandler.php
-index a414439f8fde460eb7bc30c7745b2292998d58c0..878805ded688a8e158a7bc5e1150ac3434342aaa 100644
+index a414439f8fd..878805ded68 100644
 --- a/core/lib/Drupal/Core/Form/FormErrorHandler.php
 +++ b/core/lib/Drupal/Core/Form/FormErrorHandler.php
 @@ -5,6 +5,7 @@
@@ -90,11 +90,25 @@ index a414439f8fde460eb7bc30c7745b2292998d58c0..878805ded688a8e158a7bc5e1150ac34
    }
  
  }
+diff --git a/core/lib/Drupal/Core/Render/Element/RenderElementBase.php b/core/lib/Drupal/Core/Render/Element/RenderElementBase.php
+index f3b719a40ca..f203fd849cf 100644
+--- a/core/lib/Drupal/Core/Render/Element/RenderElementBase.php
++++ b/core/lib/Drupal/Core/Render/Element/RenderElementBase.php
+@@ -147,6 +147,9 @@ public static function setAttributes(&$element, $class = []) {
+     if (isset($element['#parents']) && isset($element['#errors']) && !empty($element['#validated'])) {
+       $element['#attributes']['class'][] = 'error';
+       $element['#attributes']['aria-invalid'] = 'true';
++      if (isset($element['#id'])) {
++        $element['#attributes']['aria-describedby'] = $element['#id'] . '--error-message';
++      }
+     }
+   }
+ 
 diff --git a/core/modules/inline_form_errors/tests/src/Unit/FormErrorHandlerTest.php b/core/modules/inline_form_errors/tests/src/Unit/FormErrorHandlerTest.php
-index d5d3dfad846e0c6055de56e22c1dfc9b36e8744c..47d1a0df23cf6a57ba5acea68c67ce194094c5d7 100644
+index 2d4f07ff312..6506f776263 100644
 --- a/core/modules/inline_form_errors/tests/src/Unit/FormErrorHandlerTest.php
 +++ b/core/modules/inline_form_errors/tests/src/Unit/FormErrorHandlerTest.php
-@@ -196,8 +196,11 @@ public function testErrorMessagesNotInline(): void {
+@@ -191,8 +191,11 @@ public function testErrorMessagesNotInline(): void {
          FALSE
        );
  
@@ -109,18 +123,18 @@ index d5d3dfad846e0c6055de56e22c1dfc9b36e8744c..47d1a0df23cf6a57ba5acea68c67ce19
      $this->testForm['#disable_inline_form_errors'] = TRUE;
  
 diff --git a/core/tests/Drupal/Tests/Core/Form/FormErrorHandlerTest.php b/core/tests/Drupal/Tests/Core/Form/FormErrorHandlerTest.php
-index 0f1265c458c97d619c3452af5f13557ea3b28771..f4c38c8302b526bc317892a1b41d11b06dd24159 100644
+index e319d52b117..569b5f77ebc 100644
 --- a/core/tests/Drupal/Tests/Core/Form/FormErrorHandlerTest.php
 +++ b/core/tests/Drupal/Tests/Core/Form/FormErrorHandlerTest.php
-@@ -7,6 +7,7 @@
- use Drupal\Core\Form\FormErrorHandler;
+@@ -6,6 +6,7 @@
+ 
  use Drupal\Core\Form\FormState;
  use Drupal\Core\Messenger\MessengerInterface;
 +use Drupal\Core\Render\RendererInterface;
  use Drupal\Tests\UnitTestCase;
- use PHPUnit\Framework\Attributes\CoversClass;
- use PHPUnit\Framework\Attributes\Group;
-@@ -32,6 +33,13 @@ class FormErrorHandlerTest extends UnitTestCase {
+ 
+ /**
+@@ -28,6 +29,13 @@ class FormErrorHandlerTest extends UnitTestCase {
     */
    protected $messenger;
  
@@ -134,7 +148,7 @@ index 0f1265c458c97d619c3452af5f13557ea3b28771..f4c38c8302b526bc317892a1b41d11b0
    /**
     * {@inheritdoc}
     */
-@@ -40,7 +48,10 @@ protected function setUp(): void {
+@@ -36,7 +44,10 @@ protected function setUp(): void {
  
      $this->messenger = $this->createMock(MessengerInterface::class);
  
@@ -145,7 +159,7 @@ index 0f1265c458c97d619c3452af5f13557ea3b28771..f4c38c8302b526bc317892a1b41d11b0
        ->onlyMethods(['messenger'])
        ->getMock();
  
-@@ -74,6 +85,12 @@ public function testDisplayErrorMessages(): void {
+@@ -68,6 +79,12 @@ public function testDisplayErrorMessages(): void {
          'error',
        );
  
