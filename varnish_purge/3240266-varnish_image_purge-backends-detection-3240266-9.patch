@@ -1,0 +1,119 @@
+diff --git c/modules/varnish_image_purge/varnish_image_purge.module w/modules/varnish_image_purge/varnish_image_purge.module
+index 4a6268c..0561e89 100644
+--- c/modules/varnish_image_purge/varnish_image_purge.module
++++ w/modules/varnish_image_purge/varnish_image_purge.module
+@@ -8,6 +8,7 @@
+ use Drupal\Core\Entity\EntityInterface;
+ use Drupal\Core\Link;
+ use Drupal\Core\Routing\RouteMatchInterface;
++use Drupal\Core\Url;
+ use Drupal\file\Entity\File;
+ use Drupal\file\FileInterface;
+ use Drupal\image\Entity\ImageStyle;
+@@ -50,6 +51,24 @@ function varnish_image_purge_help($route_name, RouteMatchInterface $route_match)
+  * Implements hook_entity_update().
+  */
+ function varnish_image_purge_entity_update(EntityInterface $entity) {
++  _varnish_purge_image_entity($entity);
++}
++
++/**
++ * Implements hook_entity_delete().
++ */
++function varnish_image_purge_entity_delete(EntityInterface $entity) {
++  _varnish_purge_image_entity($entity);
++}
++
++/**
++ * Purge an image and its image style URL's from all Varnish cache instances.
++ *
++ * @param \Drupal\Core\Entity\EntityInterface $entity
++ *   The entity to purge.
++ */
++function _varnish_purge_image_entity(EntityInterface $entity) {
++
+   $bundle = $entity->bundle();
+   $entity_type = $entity->getEntityTypeId();
+   $entity_field_manager = \Drupal::service('entity_field.manager');
+@@ -75,11 +94,22 @@ function varnish_image_purge_entity_update(EntityInterface $entity) {
+     return;
+   }
+ 
+-  // @todo Does this exist? It's not using the purgers in ANY way.
+   foreach ($varnish_purgers as $key => $value) {
+     $config_purge = \Drupal::config($key);
+-    $purgers[$key]['hostname'] = $config_purge->get('hostname');
+-    $purgers[$key]['port'] = $config_purge->get('port');
++    $varnish_hosts = $config_purge->get('hostname');
++    if (!is_array($varnish_hosts)) {
++      $varnish_hosts = explode(' ', $varnish_hosts);
++    }
++    foreach ($varnish_hosts as $host) {
++      $varnish_url = sprintf('%s://%s:%s',
++        $config_purge->get("scheme"),
++        $host,
++        $config_purge->get("port")
++      );
++      if (!in_array($varnish_url, $purgers)) {
++        $purgers[] = $varnish_url;
++      }
++    }
+   }
+ 
+   $class = \Drupal::entityTypeManager()
+@@ -112,9 +142,10 @@ function varnish_image_purge_entity_update(EntityInterface $entity) {
+   // Do the actual purging...
+   /** @var Client $client */
+   $client = \Drupal::service('http_client');
++  $stream_wrapper_manager = \Drupal::service('stream_wrapper_manager');
+ 
+   // Generator for purge requests to be sent out.
+-  $requests = function () use ($client, $entity, $field_images) {
++  $requests = function() use ($client, $stream_wrapper_manager, $entity, $field_images, $purgers) {
+     $styles = ImageStyle::loadMultiple();
+ 
+     foreach ($field_images as $field_image) {
+@@ -130,20 +161,32 @@ function varnish_image_purge_entity_update(EntityInterface $entity) {
+ 
+         /** @var Drupal\image\Entity\ImageStyle; $style */
+         foreach ($styles as $style) {
+-          $url = $style->buildUrl($file->getFileUri());
++          $uri = $style->buildUri($file->getFileUri());
+ 
+-          yield function () use ($client, $url) {
+-            return $client->requestAsync('URIBAN', $url)->then(
+-              function () {
+-              },
+-              function ($reason) use ($url) {
+-                $message = $reason instanceof \Exception ? $reason->getMessage() : (string) $reason;
++          $directory_path = $stream_wrapper_manager->getViaUri($uri)->getDirectoryPath();
++          $token_query = [IMAGE_DERIVATIVE_TOKEN => $style->getPathToken($stream_wrapper_manager->normalizeUri($file->getFileUri()))];
++          $relative_url = Url::fromUri('base:' . $directory_path . '/' . $stream_wrapper_manager::getTarget($uri), ['query' => $token_query])->toString();
+ 
+-                $logger = \Drupal::logger('varnish_image_purge');
+-                $logger->error("URL not purged $url {$message}");
+-              }
++          foreach ($purgers as $purger) {
++            $url = sprintf(
++              '%s%s',
++              $purger,
++              $relative_url
+             );
+-          };
++
++            yield function () use ($client, $url) {
++              return $client->requestAsync('URIBAN', $url)->then(
++                function() {
++                },
++                function($reason) use ($url) {
++                  $message = $reason instanceof \Exception ? $reason->getMessage() : (string) $reason;
++
++                  $logger = \Drupal::logger('varnish_image_purge');
++                  $logger->error("URL not purged $url {$message}");
++                }
++              );
++            };
++          }
+         }
+       }
+     }

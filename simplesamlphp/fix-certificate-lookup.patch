@@ -1,0 +1,15 @@
+diff --git a/src/SAML2/SOAPClient.php b/src/SAML2/SOAPClient.php
+index b3f22c44..32d56339 100644
+--- a/src/SAML2/SOAPClient.php
++++ b/src/SAML2/SOAPClient.php
+@@ -103,8 +103,9 @@ class SOAPClient
+             }
+             // create ssl context
+             $ctxOpts['ssl']['verify_peer'] = true;
+-            $ctxOpts['ssl']['verify_depth'] = 1;
++            $ctxOpts['ssl']['verify_depth'] = 5;
+             $ctxOpts['ssl']['cafile'] = $peerCertFile;
++            $ctxOpts['ssl']['capath'] = '/etc/ssl/certs';
+         }
+ 
+         if ($srcMetadata->hasValue('saml.SOAPClient.stream_context.ssl.peer_name')) {

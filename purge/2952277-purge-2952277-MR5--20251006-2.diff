@@ -1,0 +1,653 @@
+diff --git a/config/schema/purge.schema.yml b/config/schema/purge.schema.yml
+index 9f6070f91c8f366c47a91319bc5b7afbceac27aa..82ff5b1e22210e287b54bd1b00f3d8a0963c621d 100644
+--- a/config/schema/purge.schema.yml
++++ b/config/schema/purge.schema.yml
+@@ -1,4 +1,14 @@
+ # Schema for the configuration files of the Purge module.
++purge.settings:
++  type: config_object
++  label: 'Purge settings'
++  mapping:
++    minification_logic:
++      type: string
++      label: 'Minification logic'
++    simplify_tags:
++      type: boolean
++      label: 'Simplify cache tags'
+ purge.logger_channels:
+   type: config_object
+   label: 'Purge logger channels'
+diff --git a/modules/purge_tokens/purge_tokens.module b/modules/purge_tokens/purge_tokens.module
+index 8e983352333c060f075e77d5c915dff3a54c181c..1d62643336279e81bce0e755065a7a55367cc3ae 100644
+--- a/modules/purge_tokens/purge_tokens.module
++++ b/modules/purge_tokens/purge_tokens.module
+@@ -7,6 +7,7 @@
+ 
+ use Drupal\Core\Render\BubbleableMetadata;
+ use Drupal\purge\Plugin\Purge\Invalidation\InvalidationInterface;
++use Drupal\purge\Plugin\Purge\Invalidation\TagInvalidation;
+ 
+ /**
+  * Implements hook_token_info().
+@@ -66,6 +67,9 @@ function purge_tokens_tokens($type, $tokens, array $data, array $options, Bubble
+       switch ($name) {
+         case 'expression':
+           if (is_string($expression = $data['invalidation']->getExpression())) {
++            if ($data['invalidation'] instanceof TagInvalidation) {
++              $expression = \Drupal::service('purge.cache_tag_minificator')->minifyCacheTag($expression);
++            }
+             $replacements[$original] = $expression;
+           }
+           break;
+@@ -84,9 +88,14 @@ function purge_tokens_tokens($type, $tokens, array $data, array $options, Bubble
+       $expressions = [];
+       foreach ($invalidations as $invalidation) {
+         if (is_string($expression = $invalidation->getExpression())) {
++          if ($invalidation instanceof TagInvalidation) {
++            $expression = \Drupal::service('purge.cache_tag_minificator')->minifyCacheTag($expression);
++          }
++
+           $expressions[] = $expression;
+         }
+       }
++
+       return implode($separator, array_unique($expressions));
+     };
+ 
+diff --git a/purge.api.php b/purge.api.php
+new file mode 100644
+index 0000000000000000000000000000000000000000..171f46fcedb74b8a396437f15699ec238c709999
+--- /dev/null
++++ b/purge.api.php
+@@ -0,0 +1,73 @@
++<?php
++
++/**
++ * @file
++ * Documentation of the Purge module.
++ */
++
++/**
++ * Supply additional dictionary for cache tag minification.
++ *
++ * Cache tags should be minified because most of webservers and HTTP proxies
++ * have an upper limit on HTTP header length. You can supply extra entries into
++ * the minification dictionary to gain even shorter cache tags.
++ *
++ * @return array
++ *   Additional entries for the minification dictionary. Keys should be original
++ *   substring in the cache tag whereas value should be the replaced value in
++ *   the cache tag.
++ */
++function hook_purge_cache_tag_minify_dictionary() {
++  // In this sample we would transform things like:
++  // node:1234 => n:1234
++  // config:some.config.data => c:some.config.data
++  return [
++    'node:' => 'n:',
++    'config:' => 'c:',
++  ];
++}
++
++/**
++ * Alter the dictionary for cache tag minification.
++ *
++ * @param array $dictionary
++ *   Keys should be original substring in the cache tag whereas value should be
++ *   the replaced value in the cache tag.
++ */
++function hook_purge_cache_tag_minify_dictionary_alter(array &$dictionary) {
++  // In this sample we prevent the minification of the "field" substring:
++  unset($dictionary['field']);
++}
++
++/**
++ * Supply additional dictionary for cache tags simplification.
++ *
++ * Cache tags should be simplified because most of webservers and HTTP proxies
++ * have an upper limit on HTTP header length. You can supply extra entries into
++ * the simplification dictionary to get even less cache tags.
++ *
++ * @return array
++ *   Additional entries for the simplification dictionary. Keys should be a
++ *   list cache tag whereas value should be a regex pattern matching all the
++ *   cache tags corresponding to the list cache tag.
++ */
++function hook_purge_cache_tags_simplify_dictionary() {
++  // In this sample we would transform things like:
++  // "node:1234, node_list, node:42" => "node_list"
++  return [
++    'node_list' => '/^node\:/',
++  ];
++}
++
++/**
++ * Alter the dictionary for cache tags simplification.
++ *
++ * @param array $dictionary
++ *   Keys should be a list cache tag whereas value should be a regex pattern
++ * matching all the cache tags corresponding to the list cache tag.
++ */
++function hook_purge_cache_tags_simplify_dictionary_alter(array &$dictionary) {
++  // In this sample we prevent the removing of "user:" cache tags when 'user_list'
++  // is present.
++  unset($dictionary['user_list']);
++}
+diff --git a/purge.links.menu.yml b/purge.links.menu.yml
+new file mode 100644
+index 0000000000000000000000000000000000000000..c88f6d3e2596e651339170ec32bf31ff9d64f9e1
+--- /dev/null
++++ b/purge.links.menu.yml
+@@ -0,0 +1,5 @@
++purge.settings_form:
++  title: Purge
++  description: Configure Purge.
++  parent: system.admin_config_system
++  route_name: purge.settings_form
+diff --git a/purge.module b/purge.module
+index 75f454462981386f59351261fae9728f8cc33737..34de1873537e30489bcec16a1c987b0fda926a1b 100644
+--- a/purge.module
++++ b/purge.module
+@@ -18,3 +18,47 @@ function purge_form_system_performance_settings_alter(&$form, FormStateInterface
+   $form['caching']['page_cache_maximum_age']['#options'][16588800] = t("6 months");
+   $form['caching']['page_cache_maximum_age']['#options'][31536000] = t("1 year (recommended for external cache invalidation)");
+ }
++
++/**
++ * Implements hook_purge_cache_tag_minify_dictionary().
++ */
++function purge_purge_cache_tag_minify_dictionary() {
++  // Pretty generic replacements that should gain some reasonable reduction in
++  // header size.
++  return [
++    'menu_link_content:' => 'ml:',
++    'menu' => 'mu',
++    'media:' => 'm:',
++    'block' => 'b',
++    'config:' => 'c:',
++    'field' => 'f',
++    'file:' => 'f:',
++    'image.style.' => 'is.',
++    'node:' => 'n:',
++    'paragraph' => 'p',
++    'responsive_image.styles.' => 'ris.',
++    'system' => 's',
++    'taxonomy_term:' => 't:',
++    'user' => 'u',
++    'view' => 'v',
++  ];
++}
++
++/**
++ * Implements hook_purge_cache_tags_simplify_dictionary().
++ */
++function purge_purge_cache_tags_simplify_dictionary() {
++  // Most common list cache tags.
++  return [
++    'config:block_list' => '/^config\:block\./',
++    // Support common content types to simplifyy tags in the form of:
++    // - "{ENTITY TYPE}:{ENTITY ID}"
++    // - "{ENTITY TYPE}_list:{ENTITY BUNDLE}".
++    'menu_link_content_list' => '/^menu_link_content(?:_list)?\:/',
++    'media_list' => '/^media(?:_list)?\:/',
++    'node_list' => '/^node(?:_list)?\:/',
++    'file_list' => '/^file(?:_list)?\:/',
++    'taxonomy_term_list' => '/^taxonomy_term(?:_list)?\:/',
++    'user_list' => '/^user(?:_list)?\:/',
++  ];
++}
+diff --git a/purge.routing.yml b/purge.routing.yml
+new file mode 100644
+index 0000000000000000000000000000000000000000..d67cf90fc92329334e48551f1cb98f3ad8aaa380
+--- /dev/null
++++ b/purge.routing.yml
+@@ -0,0 +1,7 @@
++purge.settings_form:
++  path: '/admin/config/system/purge'
++  defaults:
++    _title: 'Purge settings'
++    _form: 'Drupal\purge\Form\SettingsForm'
++  requirements:
++    _permission: 'administer site configuration'
+diff --git a/purge.services.yml b/purge.services.yml
+index 1a87644685df19c00a6890898bea60cf65038dca..4ce5a9f2a4bb0ef72a3014236ea7cc15af3dcfbb 100644
+--- a/purge.services.yml
++++ b/purge.services.yml
+@@ -137,6 +137,16 @@ services:
+     parent: default_plugin_manager
+     public: false
+ 
++  # Purge tag minificator.
++  purge.cache_tag_minificator:
++    class: Drupal\purge\CacheTagMinificator
++    arguments: ['@module_handler']
++
++  # Purge tags simplifier.
++  purge.cache_tags_simplifier:
++    class: Drupal\purge\CacheTagsSimplifier
++    arguments: ['@module_handler']
++
+   # PURGE_DRUSH services. Moved over from drush.services.yml for Drush 12 compatibility.
+   purge_drush.debug_commands:
+     class: Drupal\purge\Drush\Commands\DebugCommands
+diff --git a/src/CacheTagMinificator.php b/src/CacheTagMinificator.php
+new file mode 100644
+index 0000000000000000000000000000000000000000..c1dccfc8594bb9babd08c877a4a83451f0c84069
+--- /dev/null
++++ b/src/CacheTagMinificator.php
+@@ -0,0 +1,62 @@
++<?php
++
++namespace Drupal\purge;
++
++use Drupal\Core\Extension\ModuleHandlerInterface;
++
++/**
++ * Cache tag minificator based on static dictionary.
++ */
++class CacheTagMinificator implements CacheTagMinificatorInterface {
++
++  /**
++   * The module handler.
++   *
++   * @var \Drupal\Core\Extension\ModuleHandlerInterface
++   */
++  protected $moduleHandler;
++
++  /**
++   * Static dictionary to use for minification.
++   *
++   * @var array
++   */
++  protected $dictionary = [];
++
++  public function __construct(ModuleHandlerInterface $module_handler) {
++    $this->moduleHandler = $module_handler;
++
++    $this->dictionary = $this->moduleHandler->invokeAll('purge_cache_tag_minify_dictionary');
++    $this->moduleHandler->alter('purge_cache_tag_minify_dictionary', $this->dictionary);
++  }
++
++  /**
++   * {@inheritdoc}
++   */
++  public function minifyCacheTag($cache_tag) {
++    $config = \Drupal::service('config.factory')->get('purge.settings');
++    $minification_logic = $config->get('minification_logic');
++
++    switch ($minification_logic) {
++      case NULL:
++        return $cache_tag;
++
++      case 'dictionary':
++        return strtr($cache_tag, $this->dictionary);
++
++      case 'compress':
++        return strtolower(preg_replace('/[a-z-_]/', '', ucwords($cache_tag, '\.\:\-\_')));
++
++      case 'hash':
++        $length = 4;
++        // MD5 is the fastest algorithm beyond CRC32 (which is 30% faster, but high
++        // collision risk), so this is the best bet for now. If collisions are going
++        // to be a major problem in the future, we might have to consider a hash DB.
++        $raw = hash('md5', $cache_tag, TRUE);
++        // Convert to base64url format.
++        $hash = str_replace(['+', '/', '='], ['-', '_', ''], base64_encode($raw));
++        return substr($hash, 0, $length);
++    }
++  }
++
++}
+diff --git a/src/CacheTagMinificatorInterface.php b/src/CacheTagMinificatorInterface.php
+new file mode 100644
+index 0000000000000000000000000000000000000000..476de2ead8a0d6e76e197c75fad0dfee54c66121
+--- /dev/null
++++ b/src/CacheTagMinificatorInterface.php
+@@ -0,0 +1,28 @@
++<?php
++
++namespace Drupal\purge;
++
++/**
++ * Interface of a cache tag minificator.
++ *
++ * There is an upper limit in most web-servers / proxies on HTTP header length.
++ * Thus we minify cache tags to fit as much as possible into the imposed limit.
++ */
++interface CacheTagMinificatorInterface {
++
++  /**
++   * Minify a given cache tag.
++   *
++   * Create a hash with the given input.
++   *
++   * @param string $cache_tag
++   *   Cache tag to minify.
++   *
++   * @return string
++   *   Minified cache tag.
++   *
++   * @see hook_purge_cache_tag_minify_dictionary()
++   */
++  public function minifyCacheTag($cache_tag);
++
++}
+diff --git a/src/CacheTagsSimplifier.php b/src/CacheTagsSimplifier.php
+new file mode 100644
+index 0000000000000000000000000000000000000000..1c62f51bb0b8cb82f72ffec50b85dde3d44083f1
+--- /dev/null
++++ b/src/CacheTagsSimplifier.php
+@@ -0,0 +1,49 @@
++<?php
++
++namespace Drupal\purge;
++
++use Drupal\Core\Extension\ModuleHandlerInterface;
++
++/**
++ * Cache tags simplifier based on static dictionary of list cache tags.
++ *
++ * @todo Incorporate: https://www.drupal.org/project/drupal/issues/2145751.
++ */
++class CacheTagsSimplifier implements CacheTagsSimplifierInterface {
++
++  /**
++   * The module handler.
++   *
++   * @var \Drupal\Core\Extension\ModuleHandlerInterface
++   */
++  protected $moduleHandler;
++
++  /**
++   * Static dictionary to use for simplification.
++   *
++   * @var array
++   */
++  protected $dictionary = [];
++
++  public function __construct(ModuleHandlerInterface $module_handler) {
++    $this->moduleHandler = $module_handler;
++    $this->dictionary = $this->moduleHandler->invokeAll('purge_cache_tags_simplify_dictionary');
++    $this->moduleHandler->alter('purge_cache_tags_simplify_dictionary', $this->dictionary);
++  }
++
++  /**
++   * {@inheritdoc}
++   */
++  public function simplifyCacheTags(array &$cache_tags) {
++    foreach ($this->dictionary as $list_tag => $pattern) {
++      if (in_array($list_tag, $cache_tags)) {
++        foreach ($cache_tags as $key => $tag) {
++          if (preg_match($pattern, $tag)) {
++            unset($cache_tags[$key]);
++          }
++        }
++      }
++    }
++  }
++
++}
+diff --git a/src/CacheTagsSimplifierInterface.php b/src/CacheTagsSimplifierInterface.php
+new file mode 100644
+index 0000000000000000000000000000000000000000..2c5996807f9474837e31b491f31151f72de38d69
+--- /dev/null
++++ b/src/CacheTagsSimplifierInterface.php
+@@ -0,0 +1,36 @@
++<?php
++
++namespace Drupal\purge;
++
++/**
++ * Interface of a cache tags simplifier.
++ *
++ * There is an upper limit in most web-servers / proxies on HTTP header length.
++ * Thus we simplify cache tags to fit as much as possible into the imposed limit.
++ * For this we remove individual cache tags when the corresponding list cache
++ * tag is present.
++ *
++ * @see https://www.drupal.org/project/drupal/issues/3001276
++ */
++interface CacheTagsSimplifierInterface {
++
++  /**
++   * Simplify a given list of cache tags.
++   *
++   * Simplification aims at reducing redundant cache tags from the list of
++   * tags. For example we have a view that shows 5 nodes and adds all of their
++   * tags and also node_list tag. The result here should drop all concrete
++   * `node:id` tags, as they are already covered by the main list one.
++   *
++   * Note that this is not limited for nodes or list tags only. Custom code can
++   * consider other redundant scenarios and add them through implementing hook
++   * `hook_purge_cache_tags_simplify_dictionary` implementation.
++   *
++   * @see hook_purge_cache_tags_simplify_dictionary()
++   *
++   * @param string[] $cache_tags
++   *   Cache tags to simplify.
++   */
++  public function simplifyCacheTags(array &$cache_tags);
++
++}
+diff --git a/src/Form/SettingsForm.php b/src/Form/SettingsForm.php
+new file mode 100644
+index 0000000000000000000000000000000000000000..8cea241898c2368963de9dc6c40056bdb579dfad
+--- /dev/null
++++ b/src/Form/SettingsForm.php
+@@ -0,0 +1,68 @@
++<?php
++
++namespace Drupal\purge\Form;
++
++use Drupal\Core\Form\ConfigFormBase;
++use Drupal\Core\Form\FormStateInterface;
++
++/**
++ * Configure purge settings.
++ */
++class SettingsForm extends ConfigFormBase {
++
++  /**
++   * {@inheritdoc}
++   */
++  public function getFormId() {
++    return 'purge_settings';
++  }
++
++  /**
++   * {@inheritdoc}
++   */
++  protected function getEditableConfigNames() {
++    return ['purge.settings'];
++  }
++
++  /**
++   * {@inheritdoc}
++   */
++  public function buildForm(array $form, FormStateInterface $form_state) {
++    $config = $this->config('purge.settings');
++
++    $form['minification_logic'] = array(
++      '#type' => 'select',
++      '#title' => $this->t('Minification logic'),
++      '#options' => [
++        NULL => 'None',
++        'dictionary' => 'Dictionary (node:123 => n:123)',
++        'compress' => 'Compress (first letter of each word)',
++        'hash' => 'Hash (using MD5 algorithm)'
++      ],
++      '#default_value' => $config->get('minification_logic'),
++    );
++
++    $form['simplify_tags'] = [
++      '#type' => 'checkbox',
++      '#title' => $this->t('Simplify cache tags'),
++      '#default_value' => $config->get('simplify_tags'),
++      '#description' => $this->t('Remove individual entity cache tags (like node:123) from the list if the list cache tag of that entity (like node_list) is present.'),
++    ];
++
++    return parent::buildForm($form, $form_state);
++  }
++
++  /**
++   * {@inheritdoc}
++   */
++  public function submitForm(array &$form, FormStateInterface $form_state) {
++    $this
++      ->config('purge.settings')
++      ->set('minification_logic', $form_state->getValue('minification_logic'))
++      ->set('simplify_tags', (bool) $form_state->getValue('simplify_tags'))
++      ->save();
++
++    parent::submitForm($form, $form_state);
++  }
++
++}
+diff --git a/src/Plugin/Purge/Invalidation/TagInvalidation.php b/src/Plugin/Purge/Invalidation/TagInvalidation.php
+index d59583a07380af2a909dce5c2ff6ae1168c57778..37522d1ac4d6e7d85a5c69cb9ef9864444baca1b 100644
+--- a/src/Plugin/Purge/Invalidation/TagInvalidation.php
++++ b/src/Plugin/Purge/Invalidation/TagInvalidation.php
+@@ -2,7 +2,9 @@
+ 
+ namespace Drupal\purge\Plugin\Purge\Invalidation;
+ 
++use Drupal\purge\CacheTagMinificatorInterface;
+ use Drupal\purge\Plugin\Purge\Invalidation\Exception\InvalidExpressionException;
++use Symfony\Component\DependencyInjection\ContainerInterface;
+ 
+ /**
+  * Describes invalidation by Drupal cache tag, e.g.: 'user:1', 'menu:footer'.
+@@ -19,6 +21,42 @@ use Drupal\purge\Plugin\Purge\Invalidation\Exception\InvalidExpressionException;
+  */
+ class TagInvalidation extends InvalidationBase implements InvalidationInterface {
+ 
++  /**
++   * The cache tag minificator service.
++   *
++   * @var \Drupal\purge\CacheTagMinificatorInterface
++   */
++  protected $cacheTagMinificator;
++
++  public function __construct(array $configuration, $plugin_id, $plugin_definition, $id, $expression, CacheTagMinificatorInterface $cache_tag_minificator) {
++    parent::__construct($configuration, $plugin_id, $plugin_definition, $id, $expression);
++
++    $this->cacheTagMinificator = $cache_tag_minificator;
++  }
++
++  /**
++   * {@inheritdoc}
++   */
++  public static function create(ContainerInterface $container, array $configuration, $plugin_id, $plugin_definition) {
++    return new static(
++      [],
++      $plugin_id,
++      $plugin_definition,
++      $configuration['id'],
++      $configuration['expression'],
++      $container->get('purge.cache_tag_minificator')
++    );
++  }
++
++  /**
++   * {@inheritdoc}
++   */
++  public function __toString() {
++    $string = parent::__toString();
++
++    return $this->cacheTagMinificator->minifyCacheTag($string);
++  }
++
+   /**
+    * {@inheritdoc}
+    */
+diff --git a/src/Plugin/Purge/TagsHeader/TagsHeaderBase.php b/src/Plugin/Purge/TagsHeader/TagsHeaderBase.php
+index 9a84b89dcb4ec883141be0fe458e3ab52f7359a0..07faa36dc6cde514c260330c3ece84e61e7dc64a 100644
+--- a/src/Plugin/Purge/TagsHeader/TagsHeaderBase.php
++++ b/src/Plugin/Purge/TagsHeader/TagsHeaderBase.php
+@@ -2,7 +2,10 @@
+ 
+ namespace Drupal\purge\Plugin\Purge\TagsHeader;
+ 
++use \Drupal\Core\Config\Config;
+ use Drupal\Core\Plugin\PluginBase;
++use Drupal\purge\CacheTagMinificatorInterface;
++use Drupal\purge\CacheTagsSimplifierInterface;
+ use Symfony\Component\DependencyInjection\ContainerInterface;
+ 
+ /**
+@@ -10,6 +13,52 @@ use Symfony\Component\DependencyInjection\ContainerInterface;
+  */
+ abstract class TagsHeaderBase extends PluginBase implements TagsHeaderInterface {
+ 
++  /**
++   * The cache tag minificator service.
++   *
++   * @var \Drupal\purge\CacheTagMinificatorInterface
++   */
++  protected $cacheTagMinificator;
++
++  /**
++   * The cache tags simplifier service.
++   *
++   * @var \Drupal\purge\CacheTagsSimplifierInterface
++   */
++  protected $cacheTagsSimplifier;
++
++  /**
++   * The purge.settings config object.
++   *
++   * @var \Drupal\Core\Config\Config
++   */
++  protected $purgeSettings;
++
++  /**
++   * TagsHeaderBase constructor.
++   *
++   * @param array $configuration
++   *   A configuration array containing information about the plugin instance.
++   * @param string $plugin_id
++   *   The plugin_id for the plugin instance.
++   * @param mixed $plugin_definition
++   *   The plugin implementation definition
++   * @param \Drupal\purge\CacheTagMinificatorInterface $cache_tag_minificator
++   *   The cache tag minificator service.
++   * @param \Drupal\purge\CacheTagMinificatorInterface $cache_tag_minificator
++   *   The cache tag minificator service.
++   * @param \Drupal\Core\Config\Config $purge_settings
++   *   The purge.settings config object.
++   */
++  public function __construct(array $configuration, $plugin_id, $plugin_definition, CacheTagMinificatorInterface $cache_tag_minificator, CacheTagsSimplifierInterface $cache_tags_simplifier, Config $purge_settings) {
++    parent::__construct($configuration, $plugin_id, $plugin_definition);
++
++    $this->cacheTagMinificator = $cache_tag_minificator;
++    $this->cacheTagsSimplifier = $cache_tags_simplifier;
++    $this->purgeSettings = $purge_settings;
++
++  }
++
+   /**
+    * {@inheritdoc}
+    */
+@@ -17,7 +66,10 @@ abstract class TagsHeaderBase extends PluginBase implements TagsHeaderInterface
+     return new static(
+       $configuration,
+       $plugin_id,
+-      $plugin_definition
++      $plugin_definition,
++      $container->get('purge.cache_tag_minificator'),
++      $container->get('purge.cache_tags_simplifier'),
++      $container->get('config.factory')->get('purge.settings')
+     );
+   }
+ 
+@@ -32,6 +84,10 @@ abstract class TagsHeaderBase extends PluginBase implements TagsHeaderInterface
+    * {@inheritdoc}
+    */
+   public function getValue(array $tags) {
++    if ($this->purgeSettings->get('simplify_tags')) {
++      $this->cacheTagsSimplifier->simplifyCacheTags($tags);
++    }
++    $tags = array_map([$this->cacheTagMinificator, 'minifyCacheTag'], $tags);
+     return implode(' ', $tags);
+   }
+ 

@@ -1,0 +1,31 @@
+diff --git a/src/Plugin/Purge/DiagnosticCheck/PageCacheCheck.php b/src/Plugin/Purge/DiagnosticCheck/PageCacheCheck.php
+new file mode 100644
+index 0000000..8871602
+--- /dev/null
++++ b/src/Plugin/Purge/DiagnosticCheck/PageCacheCheck.php
+@@ -0,0 +1,25 @@
++<?php
++
++namespace Drupal\purge\Plugin\Purge\DiagnosticCheck;
++
++/**
++ * Tests if the page_cache module is installed.
++ *
++ * @PurgeDiagnosticCheck(
++ *   id = "page_cache",
++ *   title = @Translation("Page cache"),
++ *   description = @Translation("Tests if the page_cache module is installed."),
++ *   dependent_queue_plugins = {},
++ *   dependent_purger_plugins = {}
++ * )
++ */
++class PageCacheCheck extends DiagnosticCheckBase implements DiagnosticCheckInterface {
++
++  /**
++   * {@inheritdoc}
++   */
++  public function run() {
++    return self::SEVERITY_OK;
++  }
++
++}

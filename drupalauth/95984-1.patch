@@ -1,0 +1,22 @@
+From 0342e27d1b974da0d2519345c771102f69aea902 Mon Sep 17 00:00:00 2001
+From: johanvanmeel <johanvanmeel@hotmail.com>
+Date: Wed, 25 Oct 2023 08:39:44 +0200
+Subject: [PATCH] Prevent error when Drupal autoloader has been required before
+
+---
+ src/DrupalHelper.php | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/src/DrupalHelper.php b/src/DrupalHelper.php
+index 40f6bbe..1efd586 100644
+--- a/src/DrupalHelper.php
++++ b/src/DrupalHelper.php
+@@ -18,7 +18,7 @@ class DrupalHelper
+      */
+     public function bootDrupal($drupalRoot)
+     {
+-        $autoloader = require_once $drupalRoot . '/autoload.php';
++        $autoloader = require $drupalRoot . '/autoload.php';
+         $request = Request::createFromGlobals();
+         $originalDir = getcwd();
+         chdir($drupalRoot);
