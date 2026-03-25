@@ -1,0 +1,35 @@
+From cd58041d8c674f2c6224d223556d37b309697a3a Mon Sep 17 00:00:00 2001
+From: David Pascoe-Deslauriers <dpascoed@coldfrontlabs.ca>
+Date: Wed, 30 Oct 2024 20:17:35 +0000
+Subject: [PATCH] Issue #3483119: LogicException: The database connection is
+ not serializable
+
+---
+ src/Form/FieldConfigFormAlter.php | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/src/Form/FieldConfigFormAlter.php b/src/Form/FieldConfigFormAlter.php
+index a136b58..bc67469 100644
+--- a/src/Form/FieldConfigFormAlter.php
++++ b/src/Form/FieldConfigFormAlter.php
+@@ -69,7 +69,7 @@ class FieldConfigFormAlter implements ContainerInjectionInterface {
+           ],
+         ],
+       ];
+-      $form['actions']['submit']['#submit'][] = [$this, 'submit'];
++      $form['actions']['submit']['#submit'][] = [__CLASS__, 'submit'];
+     }
+   }
+ 
+@@ -84,7 +84,7 @@ class FieldConfigFormAlter implements ContainerInjectionInterface {
+     }
+   }
+ 
+-  public function submit(&$form, FormStateInterface $form_state) {
++  public static function submit(&$form, FormStateInterface $form_state) {
+     $field_config = $form_state->getFormObject()->getEntity();
+     $settings = $form_state->getValue('resumable_upload')['settings'];
+     $field_config->setThirdPartySetting('file_resup', 'enabled', $settings['enabled']);
+-- 
+GitLab
+

@@ -1,0 +1,13 @@
+diff --git a/src/EncryptStreamWrapper.php b/src/EncryptStreamWrapper.php
+index 9121f5c..3a8c01c 100644
+--- a/src/EncryptStreamWrapper.php
++++ b/src/EncryptStreamWrapper.php
+@@ -42,7 +42,7 @@ class EncryptStreamWrapper extends LocalStream {
+    * {@inheritdoc}
+    */
+   public static function getType() {
+-    return StreamWrapperInterface::NORMAL;
++    return StreamWrapperInterface::LOCAL_NORMAL;
+   }
+ 
+   /**

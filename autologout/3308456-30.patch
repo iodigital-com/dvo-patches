@@ -1,0 +1,206 @@
+diff --git a/autologout.module b/autologout.module
+index 30c26e08f..e6cc510d1 100644
+--- a/autologout.module
++++ b/autologout.module
+@@ -247,6 +247,8 @@ function autologout_page_attachments_alter(array &$attachments) {
+   $msg = t(Xss::filter($settings->get('message')));
+   $logout_regardless_of_activity = $settings->get('logout_regardless_of_activity');
+ 
++  $expiry = $settings->get('cookie_lifetime') ? $settings->get('cookie_lifetime') : \Drupal::time()->getRequestTime() + 31536000;
++
+   $settings = [
+     'timeout' => $refresh_only ? ($timeout * 500) : ($timeout * 1000),
+     'timeout_padding' => $timeout_padding * 1000,
+@@ -262,6 +264,10 @@ function autologout_page_attachments_alter(array &$attachments) {
+     'use_alt_logout_method' => $use_alt_logout_method,
+     'logout_regardless_of_activity' => $logout_regardless_of_activity,
+     'modal_width' => $settings->get('modal_width') ? (int) $settings->get('modal_width') : 'auto',
++    'cookie_lifetime' => $expiry,
++    'cookie_secure' => $settings->get('cookie_secure') ?: FALSE,
++    'cookie_httponly' => $settings->get('cookie_httponly') ?: FALSE,
++    'cookie_samesite' => $settings->get('cookie_samesite') ?: 'Lax',
+   ];
+   // If this is an AJAX request, then the logout redirect url should still be
+   // referring to the page that generated this request.
+@@ -351,5 +357,27 @@ function autologout_user_login($account): void {
+   }
+ 
+   // Add login time cookie.
+-  user_cookie_save(['autologout_login' => \Drupal::time()->getCurrentTime()]);
++  $config = \Drupal::config('autologout.settings');
++  $lifetime = $config->get('cookie_lifetime');
++  // By default, expire in one year.
++  $expiry = \Drupal::time()->getRequestTime() + 31536000;
++  if ($lifetime > 0) {
++    $expiry = \Drupal::time()->getRequestTime() + $lifetime;
++  }
++  // If lifetime is *exactly* 0 that means we want to set the expiry to 0,
++  // meaning the cookie will expire when the browser is closed. If the cookie
++  // is empty but *not* 0, the default above applies.
++  if (is_numeric($lifetime) && intval($lifetime) === 0) {
++    $expiry = 0;
++  }
++
++  setrawcookie('Drupal.visitor.autologout_login', rawurlencode(\Drupal::time()->getCurrentTime()),
++    [
++      'expires' => $expiry,
++      'path' => '/',
++      'secure' => $config->get('cookie_secure') ?: FALSE,
++      'httponly' => $config->get('cookie_httponly') ?: FALSE,
++      'samesite' => $config->get('cookie_samesite') ?: 'Lax',
++    ],
++  );
+ }
+diff --git a/autologout.post_update.php b/autologout.post_update.php
+index 10277b0e7..1decceaae 100644
+--- a/autologout.post_update.php
++++ b/autologout.post_update.php
+@@ -67,3 +67,29 @@ function autologout_post_update_9502(&$sandbox) {
+   }
+   $config->save(TRUE);
+ }
++
++/**
++ * Implements hook_post_update_NAME().
++ */
++function autologout_post_update_9510(&$sandbox) {
++  // Issue #3308456: Autologout cookie is not secure.
++  $config_factory = \Drupal::configFactory();
++  $config = $config_factory->getEditable('autologout.settings');
++  $cookieSecure = $config->get('cookie_secure');
++  if ($cookieSecure === NULL) {
++    $config->set('cookie_secure', FALSE);
++  }
++  $cookieHttpOnly = $config->get('cookie_httponly');
++  if ($cookieHttpOnly === NULL) {
++    $config->set('cookie_httponly', FALSE);
++  }
++  $cookieSameSite = $config->get('cookie_samesite');
++  if ($cookieSameSite === NULL) {
++    $config->set('cookie_samesite', 'Lax');
++  }
++  $cookieLifetime = $config->get('cookie_lifetime');
++  if ($cookieLifetime === NULL) {
++    $config->set('cookie_lifetime', 31536000);
++  }
++  $config->save(TRUE);
++}
+diff --git a/config/install/autologout.settings.yml b/config/install/autologout.settings.yml
+index d3d770861..6c393b4bd 100644
+--- a/config/install/autologout.settings.yml
++++ b/config/install/autologout.settings.yml
+@@ -19,3 +19,7 @@ jstimer_js_load_option: false
+ use_alt_logout_method: false
+ use_watchdog: true
+ whitelisted_ip_addresses: ''
++cookie_secure: false
++cookie_httponly: false
++cookie_samesite: 'Lax'
++cookie_lifetime: 31536000
+diff --git a/config/schema/autologout.schema.yml b/config/schema/autologout.schema.yml
+index db62051fa..7a35cdaa1 100644
+--- a/config/schema/autologout.schema.yml
++++ b/config/schema/autologout.schema.yml
+@@ -76,6 +76,18 @@ autologout.settings:
+     whitelisted_ip_addresses:
+       type: string
+       label: 'Whitelisted IP addresses'
++    cookie_secure:
++      type: boolean
++      label: 'Cookie Secure'
++    cookie_httponly:
++      type: boolean
++      label: 'Cookie httpOnly'
++    cookie_samesite:
++      type: string
++      label: 'Cookie SameSite'
++    cookie_lifetime:
++      type: integer
++      label: 'Cookie Lifetime'
+ 
+ autologout.role.*:
+   type: config_object
+diff --git a/js/autologout.js b/js/autologout.js
+index ca3fe7e45..363420c8b 100644
+--- a/js/autologout.js
++++ b/js/autologout.js
+@@ -144,7 +144,16 @@
+         if (!disableButtons) {
+           let yesButton = settings.autologout.yes_button;
+           buttons[Drupal.t(yesButton)] = function () {
+-            cookies.set("Drupal.visitor.autologout_login", Math.round((new Date()).getTime() / 1000));
++            cookies.set(
++              "Drupal.visitor.autologout_login",
++              Math.round((new Date()).getTime() / 1000),
++              {
++                expires: settings.autologout.cookie_lifetime,
++                secure: settings.autologout.cookie_secure,
++                httponly: settings.autologout.cookie_httponly,
++                samesite: settings.autologout.cookie_samesite,
++              }
++            );
+             $(this).dialog("destroy");
+             clearTimeout(paddingTimer);
+             refresh();
+diff --git a/src/Form/AutologoutSettingsForm.php b/src/Form/AutologoutSettingsForm.php
+index a1f38236f..8242ac5d5 100644
+--- a/src/Form/AutologoutSettingsForm.php
++++ b/src/Form/AutologoutSettingsForm.php
+@@ -307,6 +307,46 @@ public function buildForm(array $form, FormStateInterface $form_state) {
+         '#description' => $this->t('Change the display of the dynamic timer. Available replacement values are: %day%, %month%, %year%, %dow%, %moy%, %years%, %ydays%, %days%, %hours%, %mins%, and %secs%.'),
+       ];
+     }
++    $form['cookie_secure'] = [
++      '#type' => 'checkbox',
++      '#title' => $this->t('Cookie Secure'),
++      '#default_value' => $config->get('cookie_secure') ?: FALSE,
++      '#description' => $this->t("Specifies whether or not the cookie should only be transmitted over a secure HTTPS connection. The cookie will only be set if a secure connection exists."),
++    ];
++
++    $form['cookie_httponly'] = [
++      '#type' => 'checkbox',
++      '#title' => $this->t('Cookie HttpOnly'),
++      '#default_value' => $config->get('cookie_httponly'),
++      '#description' => $this->t("Whether to set the HttpOnly attribute on the autologout cookie."),
++    ];
++
++    $form['cookie_samesite'] = [
++      '#type' => 'select',
++      '#options' => [
++        'Strict' => $this->t('Strict'),
++        'Lax' => $this->t('Lax'),
++        'None' => $this->t('None'),
++      ],
++      '#title' => $this->t('Cookie SameSite'),
++      '#default_value' => $config->get('cookie_samesite') ?: 'Lax',
++      '#description' => $this->t("The SameSite attribute to set on the autologout cookie."),
++    ];
++
++    if ($config->get('cookie_lifetime') == 0) {
++      $cookie_lifetime = 0;
++    } else if (!empty($config->get('cookie_lifetime'))) {
++      $cookie_lifetime = $config->get('cookie_lifetime');
++    } else {
++      $cookie_lifetime = 31536000;
++    }
++    $form['cookie_lifetime'] = [
++      '#type' => 'number',
++      '#title' => $this->t('Cookie lifetime'),
++      '#default_value' => $cookie_lifetime,
++      '#min' => 0,
++      '#description' => $this->t('Number of seconds before the cookie expires after it is set. If 0 will expire when the browser closes.'),
++    ];
+ 
+     $form['role_container'] = [
+       '#type' => 'container',
+@@ -495,6 +535,10 @@ public function submitForm(array &$form, FormStateInterface $form_state) {
+       ->set('whitelisted_ip_addresses', $values['whitelisted_ip_addresses'])
+       ->set('use_alt_logout_method', $values['use_alt_logout_method'])
+       ->set('use_watchdog', $values['use_watchdog'])
++      ->set('cookie_secure', $values['cookie_secure'])
++      ->set('cookie_samesite', $values['cookie_samesite'])
++      ->set('cookie_lifetime', $values['cookie_lifetime'])
++      ->set('cookie_httponly', $values['cookie_httponly'])
+       ->save();
+ 
+     if (!empty($values['table'])) {

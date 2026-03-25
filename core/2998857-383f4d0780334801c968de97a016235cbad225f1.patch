@@ -1,0 +1,35 @@
+From 383f4d0780334801c968de97a016235cbad225f1 Mon Sep 17 00:00:00 2001
+From: "e.chatrer" <e.chatrer@3636722.no-reply.drupal.org>
+Date: Fri, 14 Jan 2022 11:18:35 +0000
+Subject: [PATCH] Update FormBuilder to support aria-describedby for "file"
+ type
+
+---
+ core/lib/Drupal/Core/Form/FormBuilder.php | 11 +++++++++++
+ 1 file changed, 11 insertions(+)
+
+diff --git a/core/lib/Drupal/Core/Form/FormBuilder.php b/core/lib/Drupal/Core/Form/FormBuilder.php
+index 6388b857c767..fdc061a4ea5c 100644
+--- a/core/lib/Drupal/Core/Form/FormBuilder.php
++++ b/core/lib/Drupal/Core/Form/FormBuilder.php
+@@ -995,6 +995,17 @@ public function doBuildForm($form_id, &$element, FormStateInterface &$form_state
+     if (!empty($element['#description'])) {
+       $element['#attributes']['aria-describedby'] = $element['#id'] . '--description';
+     }
++
++    // Add the aria-describedby attribute to the "file type" because it doesn't
++    // get added the normal way.
++    if (isset($element['#type']) && $element['#type'] === 'file') {
++      $parent = $element['#parents'][0];
++      if (isset($form_state->getCompleteForm()['elements'][$parent]['#description'])){
++        $id = $form_state->getCompleteForm()['elements'][$parent]['#id'];
++        $element['#attributes']['aria-describedby'] = $id . '--description';
++      }
++    }
++    
+     // Handle input elements.
+     if (!empty($element['#input'])) {
+       $this->handleInputElement($form_id, $element, $form_state);
+-- 
+GitLab
+

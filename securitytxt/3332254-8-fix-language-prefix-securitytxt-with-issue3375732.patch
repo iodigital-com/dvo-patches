@@ -1,0 +1,30 @@
+diff --git a/src/Form/SecuritytxtSignForm.php b/src/Form/SecuritytxtSignForm.php
+index 2863c1e..58265c2 100644
+--- a/src/Form/SecuritytxtSignForm.php
++++ b/src/Form/SecuritytxtSignForm.php
+@@ -73,11 +73,22 @@ class SecuritytxtSignForm extends ConfigFormBase {
+       return $form;
+     }
+ 
++    $prefixes = \Drupal::config('language.negotiation')->get('url.prefixes');
++    $securitytxt_url = Url::fromRoute('securitytxt.securitytxt_file')->toString();
++    $array = explode('/', $securitytxt_url);
++    $language = $array[1];
++
++    foreach ($prefixes as $prefix) {
++      if ($prefix === $language) {
++        $securitytxt_url = substr(str_replace($language, '', $securitytxt_url), 1);
++      }
++    }
++
+     $form['instructions'] = [
+       '#type' => 'markup',
+-      '#markup' => '<ol>' . '<li>' . $this->t('<a href=":download" download="security.txt">Download</a> your security.txt file.', [':download' => Url::fromRoute('securitytxt.securitytxt_file')->toString()]) . '</li>' .
+-      '<li><p>Sign your security.txt file with the encryption key you specified in your security.txt file. This can be done with the following GPG command:</p><p><kbd>gpg -u KEYID --output security.txt.sig  --armor --detach-sig security.txt</kbd></p></li>' .
+-      '<li>Paste the contents of the <kbd>security.txt.sig</kbd> file into the text box below.</li>' .
++      '#markup' => '<ol>' . '<li>' . $this->t('<a href=":download" download="security.txt">Download</a> your security.txt file.', [':download' => $securitytxt_url]) . '</li>' .
++      '<li><p>' . $this->t('Sign your security.txt file with the encryption key you specified in your security.txt file. This can be done with the following GPG command:') . '</p><p><kbd>gpg -u KEYID --output security.txt.sig  --armor --detach-sig security.txt</kbd></p></li>' .
++      '<li>' . $this->t('Paste the contents of the <kbd>security.txt.sig</kbd> file into the text box below.') . '</li>' .
+       '</ol>',
+     ];
+     $form['signature_text'] = [

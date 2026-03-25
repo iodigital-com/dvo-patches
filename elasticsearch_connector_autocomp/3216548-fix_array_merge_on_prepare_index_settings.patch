@@ -1,0 +1,21 @@
+diff --git a/src/EventSubscriber/DefaultSubscriber.php b/src/EventSubscriber/DefaultSubscriber.php
+index 4dba019..8dcf0a4 100644
+--- a/src/EventSubscriber/DefaultSubscriber.php
++++ b/src/EventSubscriber/DefaultSubscriber.php
+@@ -2,6 +2,7 @@
+ 
+ namespace Drupal\elasticsearch_connector_autocomp\EventSubscriber;
+ 
++use Drupal\Component\Utility\NestedArray;
+ use Drupal\Core\Database\Connection;
+ use Drupal\elasticsearch_connector\ElasticSearch\Parameters\Factory\IndexFactory;
+ use Drupal\Core\Entity\EntityTypeManagerInterface;
+@@ -122,7 +123,7 @@ class DefaultSubscriber implements EventSubscriberInterface {
+ EOF;
+ 
+       $body = json_decode($body, TRUE);
+-      $indexConfig['body'] = array_merge($indexConfig['body'], $body);
++      $indexConfig['body'] = NestedArray::mergeDeepArray([$indexConfig['body'], $body]);
+     }
+ 
+     $event->setIndexConfig($indexConfig);

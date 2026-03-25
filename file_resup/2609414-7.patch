@@ -1,0 +1,35 @@
+diff --git a/src/Controller/UploadController.php b/src/Controller/UploadController.php
+index 81503b0a2813ad0d4551bf5ea9b4bc2208811cc9..7ca1c9b7dc283ac7bc53af5e5119ea02914366da 100644
+--- a/src/Controller/UploadController.php
++++ b/src/Controller/UploadController.php
+@@ -176,7 +176,7 @@ class UploadController extends ControllerBase {
+     }
+ 
+     // Acquire an exclusive lock.
+-    if (!flock($fp, LOCK_EX)) {
++    if (stream_supports_lock($fp) && !flock($fp, LOCK_EX)) {
+       fclose($fp);
+       throw new LockAcquiringException("Couldn't acquire an exclusive lock for ". FileWidgetFormAlter::getUploadUri($upload) . ".");
+     }
+@@ -193,7 +193,9 @@ class UploadController extends ControllerBase {
+     }
+     catch (\Exception $e) {
+       $transaction->rollback();
+-      flock($fp, LOCK_UN);
++      if (stream_supports_lock($fp)) {
++        flock($fp, LOCK_UN);
++      }
+       fclose($fp);
+       throw new FileWriteException('Failed to write chunk.');
+     }
+@@ -203,7 +205,9 @@ class UploadController extends ControllerBase {
+ 
+     // Flush the output then unlock and close the file.
+     fflush($fp);
+-    flock($fp, LOCK_UN);
++    if (stream_supports_lock($fp)) {
++      flock($fp, LOCK_UN);
++    }
+     fclose($fp);
+ 
+     // Return the updated number of uploaded chunks.

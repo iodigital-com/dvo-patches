@@ -1,0 +1,45 @@
+diff --git a/potx.inc b/potx.inc
+--- a/potx.inc	(revision 6161dfb62a21fbf640d9a08eba210d28ba9cd588)
++++ b/potx.inc	(date 1751586488760)
+@@ -2037,12 +2037,12 @@
+       $chained = FALSE;
+       $is_concat = FALSE;
+ 
+-      if ($stream->test(Token::PUNCTUATION_TYPE, '.')) {
++      if ($stream->test(Token::PUNCTUATION_TYPE, '.') || $stream->test(Token::OPERATOR_TYPE, '.')) {
+         $is_concat = TRUE;
+       }
+ 
+       while (!$stream->isEOF() && ($token = $stream->next()) && (!$token->test(Token::VAR_END_TYPE))) {
+-        if ($token->test(Token::PUNCTUATION_TYPE, '|')) {
++        if ($token->test(Token::PUNCTUATION_TYPE, '|') || $token->test(Token::OPERATOR_TYPE, '|')) {
+           if ($stream->test(['t', 'trans'])) {
+             $has_t = TRUE;
+           }
+@@ -2090,7 +2090,7 @@
+     $string = $token->getValue();
+     $line = $token->getLine();
+     $has_t = FALSE;
+-    if ($stream->test(Token::PUNCTUATION_TYPE, '|')) {
++    if ($stream->test(Token::PUNCTUATION_TYPE, '|') || $stream->test(Token::OPERATOR_TYPE, '|')) {
+       $token = $stream->next();
+       if ($stream->test(['t', 'trans'])) {
+         $has_t = TRUE;
+@@ -2153,7 +2153,7 @@
+     }
+     elseif ($token->test(Token::VAR_START_TYPE)) {
+       $name = [];
+-      while ($stream->look(1)->test(Token::PUNCTUATION_TYPE, '.')) {
++      while ($stream->look(1)->test(Token::PUNCTUATION_TYPE, '.') || $stream->look(1)->test(Token::OPERATOR_TYPE, '.')) {
+         $token = $stream->next();
+         $name[] = $token->getValue();
+         $stream->next();
+@@ -2168,7 +2168,7 @@
+       // "filter" supported is placeholder, so if there is any other filter
+       // then we keep assuming it is to be escaped. (Even if later a
+       // placeholder filter was attempted).
+-      if ($token->test(Token::PUNCTUATION_TYPE, '|')) {
++      if ($token->test(Token::PUNCTUATION_TYPE, '|') || $token->test(Token::OPERATOR_TYPE, '|')) {
+         $token = $stream->next();
+         if ($token->getValue() == 'placeholder') {
+           $prefix = '%';

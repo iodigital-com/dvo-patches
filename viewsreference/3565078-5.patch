@@ -1,0 +1,47 @@
+diff --git a/src/Plugin/Field/FieldWidget/ViewsReferenceSelectWidget.php b/src/Plugin/Field/FieldWidget/ViewsReferenceSelectWidget.php
+index 3b2222aa61c58faa59d023ec252b5203e437570f..0c8f82ffd315f54005fa71e0aa71779f29545889 100644
+--- a/src/Plugin/Field/FieldWidget/ViewsReferenceSelectWidget.php
++++ b/src/Plugin/Field/FieldWidget/ViewsReferenceSelectWidget.php
+@@ -29,15 +29,6 @@ class ViewsReferenceSelectWidget extends OptionsSelectWidget {
+     $select_element['target_id'] = parent::formElement($items, $delta, $element, $form, $form_state);
+     $select_element = $this->fieldElement($items, $delta, $select_element, $form, $form_state);
+     $select_element['target_id']['#multiple'] = FALSE;
+-    if (!$this->isDefaultValueWidget($form_state)) {
+-      $selected_views = $items->getSetting('preselect_views');
+-      $selected_views = array_diff($selected_views, ['0']);
+-      $selected_views = $this->getViewNames($selected_views);
+-      if (count($selected_views) >= 1) {
+-        $first_option = ['_none' => $this->t('- Select a value -')];
+-        $select_element['target_id']['#options'] = array_merge($first_option, $selected_views);
+-      }
+-    }
+     return $select_element;
+   }
+ 
+diff --git a/viewsreference.module b/viewsreference.module
+index d25bab93d77f3d9fe56145dbfd9c07cb59e64f1d..984ba59d37efced89291e480be6b96530fb20e1e 100644
+--- a/viewsreference.module
++++ b/viewsreference.module
+@@ -26,6 +26,22 @@ function viewsreference_help($route_name, RouteMatchInterface $arg) {
+   }
+ }
+ 
++/**
++ * Implements hook_options_list_alter().
++ */
++function viewsreference_options_list_alter(array &$options, array $context) {
++  // Only act on our own field.
++  if (isset($context['fieldDefinition']) && $context['fieldDefinition']->getType() === 'viewsreference') {
++    $selected_views = $context['fieldDefinition']->getSetting('preselect_views');
++    // Limit the options to the selected views.
++    $options = array_intersect_key($options, $selected_views);
++    if (count($options) >= 1) {
++      // Add a "none" value.
++      $options = array_merge(['_none' => t('- Select a value -')], $options);
++    }
++  }
++}
++
+ /**
+  * Implements hook_theme_suggestions_HOOK().
+  */

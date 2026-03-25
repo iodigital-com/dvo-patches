@@ -1,0 +1,11 @@
+diff --git a/config/schema/securitytxt.schema.yml b/config/schema/securitytxt.schema.yml
+index 3ddfddc..93d0b03 100644
+--- a/config/schema/securitytxt.schema.yml
++++ b/config/schema/securitytxt.schema.yml
+@@ -38,3 +38,6 @@ securitytxt.settings:
+     canonical_urls:
+       type: string
+       label: 'Canonical URLs'
++    hiring_url:
++      type: string
++      label: 'Hiring page URL'

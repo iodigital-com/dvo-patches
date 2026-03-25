@@ -1,0 +1,205 @@
+diff --git a/core/modules/views/src/EntityViewsData.php b/core/modules/views/src/EntityViewsData.php
+index 87bfa116b3..4587db6f31 100644
+--- a/core/modules/views/src/EntityViewsData.php
++++ b/core/modules/views/src/EntityViewsData.php
+@@ -51,13 +51,6 @@ class EntityViewsData implements EntityHandlerInterface, EntityViewsDataInterfac
+    */
+   protected $translationManager;
+ 
+-  /**
+-   * The field storage definitions for all base fields of the entity type.
+-   *
+-   * @var \Drupal\Core\Field\FieldStorageDefinitionInterface[]
+-   */
+-  protected $fieldStorageDefinitions;
+-
+   /**
+    * The entity type manager.
+    *
+@@ -111,18 +104,6 @@ public static function createInstance(ContainerInterface $container, EntityTypeI
+     );
+   }
+ 
+-  /**
+-   * Gets the field storage definitions.
+-   *
+-   * @return \Drupal\Core\Field\FieldStorageDefinitionInterface[]
+-   */
+-  protected function getFieldStorageDefinitions() {
+-    if (!isset($this->fieldStorageDefinitions)) {
+-      $this->fieldStorageDefinitions = $this->entityFieldManager->getFieldStorageDefinitions($this->entityType->id());
+-    }
+-    return $this->fieldStorageDefinitions;
+-  }
+-
+   /**
+    * {@inheritdoc}
+    */
+@@ -401,7 +382,8 @@ protected function addEntityLinks(array &$data) {
+   protected function mapFieldDefinition($table, $field_name, FieldDefinitionInterface $field_definition, TableMappingInterface $table_mapping, &$table_data) {
+     // Create a dummy instance to retrieve property definitions.
+     $field_column_mapping = $table_mapping->getColumnNames($field_name);
+-    $field_schema = $this->getFieldStorageDefinitions()[$field_name]->getSchema();
++    $field_storage_definitions = $this->entityFieldManager->getFieldStorageDefinitions($this->entityType->id());
++    $field_schema = $field_storage_definitions[$field_name]->getSchema();
+ 
+     $field_definition_type = $field_definition->getType();
+     // Add all properties to views table data. We need an entry for each
+diff --git a/core/modules/views/tests/modules/views_test_optional_field/src/Plugin/Field/FieldType/ViewsDataOptionalField.php b/core/modules/views/tests/modules/views_test_optional_field/src/Plugin/Field/FieldType/ViewsDataOptionalField.php
+new file mode 100644
+index 0000000000..e7c770291f
+--- /dev/null
++++ b/core/modules/views/tests/modules/views_test_optional_field/src/Plugin/Field/FieldType/ViewsDataOptionalField.php
+@@ -0,0 +1,55 @@
++<?php
++
++namespace Drupal\views_test_optional_field\Plugin\Field\FieldType;
++
++use Drupal\Core\Field\FieldItemBase;
++use Drupal\Core\Field\FieldStorageDefinitionInterface;
++use Drupal\Core\StringTranslation\TranslatableMarkup;
++use Drupal\Core\TypedData\MapDataDefinition;
++
++/**
++ * Plugin implementation of the 'views_data_optional_field' field type.
++ *
++ * @FieldType(
++ *   id = "views_data_optional_field",
++ *   label = @Translation("Views data optional field"),
++ *   no_ui = TRUE
++ * )
++ */
++class ViewsDataOptionalField extends FieldItemBase {
++
++  /**
++   * {@inheritdoc}
++   */
++  public static function defaultStorageSettings() {
++    return [
++      'views_data_optional_field' => [],
++    ] + parent::defaultStorageSettings();
++  }
++
++  /**
++   * {@inheritdoc}
++   */
++  public static function propertyDefinitions(FieldStorageDefinitionInterface $field_definition) {
++    $properties['value'] = MapDataDefinition::create()
++      ->setLabel(new TranslatableMarkup('Value'));
++
++    return $properties;
++  }
++
++  /**
++   * {@inheritdoc}
++   */
++  public static function schema(FieldStorageDefinitionInterface $field_definition) {
++    $schema = [
++      'columns' => [
++        'value' => [
++          'type' => 'int',
++        ],
++      ],
++    ];
++
++    return $schema;
++  }
++
++}
+diff --git a/core/modules/views/tests/modules/views_test_optional_field/views_test_optional_field.info.yml b/core/modules/views/tests/modules/views_test_optional_field/views_test_optional_field.info.yml
+new file mode 100644
+index 0000000000..673604a227
+--- /dev/null
++++ b/core/modules/views/tests/modules/views_test_optional_field/views_test_optional_field.info.yml
+@@ -0,0 +1,8 @@
++name: 'Views Optional Field Test'
++type: module
++description: 'Provides optional base fields for views data tests.'
++package: Testing
++version: VERSION
++dependencies:
++  - drupal:views
++  - drupal:node
+diff --git a/core/modules/views/tests/modules/views_test_optional_field/views_test_optional_field.module b/core/modules/views/tests/modules/views_test_optional_field/views_test_optional_field.module
+new file mode 100644
+index 0000000000..278e4b45d1
+--- /dev/null
++++ b/core/modules/views/tests/modules/views_test_optional_field/views_test_optional_field.module
+@@ -0,0 +1,21 @@
++<?php
++
++/**
++ * @file
++ * Contains main module functionality.
++ */
++
++use Drupal\Core\Entity\EntityTypeInterface;
++use Drupal\Core\Field\BaseFieldDefinition;
++
++/**
++ * Implements hook_entity_base_field_info().
++ */
++function views_test_optional_field_entity_base_field_info(EntityTypeInterface $entity_type) {
++  if ($entity_type->id() == 'node'
++    && \Drupal::state()->get('views_entity_test.enable_optional_field')) {
++    $definitions['test_optional_field'] = BaseFieldDefinition::create('views_data_optional_field')
++      ->setLabel(t('Test optional_field'));
++    return $definitions;
++  }
++}
+diff --git a/core/modules/views/tests/src/Kernel/FieldApiDataTest.php b/core/modules/views/tests/src/Kernel/FieldApiDataTest.php
+index 1df711aaeb..b4f74206f7 100644
+--- a/core/modules/views/tests/src/Kernel/FieldApiDataTest.php
++++ b/core/modules/views/tests/src/Kernel/FieldApiDataTest.php
+@@ -27,6 +27,7 @@ class FieldApiDataTest extends ViewsKernelTestBase {
+     'language',
+     'node',
+     'user',
++    'views_data_optional_field_test',
+   ];
+ 
+   /**
+@@ -382,4 +383,43 @@ public function testEntityFieldFilter() {
+     $view->destroy();
+   }
+ 
++  /**
++   * Unit testing the views data response to changes.
++   *
++   * We check views data ability to update with config changes.
++   */
++  public function testUpdatedViewsData() {
++    $views_data = $this->container->get('views.views_data');
++
++    NodeType::create(['type' => 'page'])->save();
++
++    FieldStorageConfig::create([
++      'field_name' => 'field_string',
++      'entity_type' => 'node',
++      'type' => 'string',
++    ])->save();
++
++    $unrelated_field = FieldConfig::create([
++      'field_name' => 'field_string',
++      'entity_type' => 'node',
++      'bundle' => 'page',
++      'label' => 'First test field label',
++    ]);
++    $unrelated_field->save();
++
++    // Build the static cache, for example during routes rebuild
++    // after module enabling as part of config sync.
++    $views_data->getAll();
++
++    // Enable the optional field, is often managed via config.
++    \Drupal::state()->set('views_entity_test.enable_optional_field', TRUE);
++
++    // Updating field config clears entity field manager static cache
++    // and simulate changes during a config sync.
++    $unrelated_field->save();
++
++    $new_data = $views_data->get('node_field_data');
++    $this->assertTrue(isset($new_data['test_optional_field']), 'Optional base field is not found.');
++  }
++
+ }

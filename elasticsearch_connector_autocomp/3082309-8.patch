@@ -1,0 +1,76 @@
+diff --git a/config/schema/elasticsearch_connector_autocomp.schema.yml b/config/schema/elasticsearch_connector_autocomp.schema.yml
+new file mode 100644
+index 0000000..c58770b
+--- /dev/null
++++ b/config/schema/elasticsearch_connector_autocomp.schema.yml
+@@ -0,0 +1,16 @@
++search_api.index.third_party_settings.elasticsearch_connector:
++  type: mapping
++  mapping:
++    ngram_filter_enabled:
++      type: boolean
++    ngram_config:
++      type: mapping
++      mapping:
++        ngram_type:
++          type: string
++        min_gram:
++          type: string
++        max_gram:
++          type: string
++        max_ngram_diff:
++          type: string
+diff --git a/elasticsearch_connector_autocomp.module b/elasticsearch_connector_autocomp.module
+index 30c4218..c1abd61 100644
+--- a/elasticsearch_connector_autocomp.module
++++ b/elasticsearch_connector_autocomp.module
+@@ -86,6 +86,7 @@ function elasticsearch_connector_autocomp_form_search_api_index_form_alter(&$for
+     'ngram_config' => [
+       'min_gram' => 3,
+       'max_gram' => 20,
++      'max_ngram_diff' => 10,
+     ],
+   ];
+   if (!$index->isNew()) {
+@@ -136,6 +137,12 @@ function elasticsearch_connector_autocomp_form_search_api_index_form_alter(&$for
+     '#default_value' => $settings['ngram_config']['max_gram'],
+   ];
+ 
++  $form['third_party_settings']['elasticsearch_connector']['ngram_config']['max_ngram_diff'] = [
++    '#title'         => t('max gram diff'),
++    '#type'          => 'textfield',
++    '#default_value' => isset($settings['ngram_config']['max_ngram_diff']) ? $settings['ngram_config']['max_ngram_diff'] : 10,
++  ];
++
+   // Use our submit handlers to confirm.
+   $form['actions']['submit']['#submit'] = ['elasticsearch_connector_autocomp_form_search_api_index_form_submit'];
+   $form['#submit'] = [];
+@@ -212,3 +219,16 @@ function elasticsearch_connector_autocomp_form_search_api_index_fields_alter(&$f
+     }
+   }
+ }
++
++/**
++ * Implements hook_config_schema_info_alter().
++ */
++function elasticsearch_connector_autocomp_config_schema_info_alter(&$definitions) {
++  $definitions['search_api.index.*']['mapping']['third_party_settings'] = [
++    'type' => 'sequence',
++    'label' => 'Third party settings',
++    'sequence' => [
++      'type' => 'search_api.index.third_party_settings.[%key]',
++    ],
++  ];
++}
+diff --git a/src/EventSubscriber/DefaultSubscriber.php b/src/EventSubscriber/DefaultSubscriber.php
+index 4dba019..c11ee4b 100644
+--- a/src/EventSubscriber/DefaultSubscriber.php
++++ b/src/EventSubscriber/DefaultSubscriber.php
+@@ -98,6 +98,7 @@ class DefaultSubscriber implements EventSubscriberInterface {
+       $body = <<<EOF
+ {
+ 	"settings": {
++		"max_ngram_diff": "{$settings['ngram_config']['max_ngram_diff']}",
+ 		"analysis": {
+ 			"filter": {
+ 				"ngram_filter": {

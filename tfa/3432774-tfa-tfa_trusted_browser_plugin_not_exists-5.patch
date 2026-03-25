@@ -1,0 +1,25 @@
+diff --git a/src/Controller/TfaLoginController.php b/src/Controller/TfaLoginController.php
+index c625207..3063f9d 100644
+--- a/src/Controller/TfaLoginController.php
++++ b/src/Controller/TfaLoginController.php
+@@ -120,8 +120,18 @@ class TfaLoginController {
+     if (!$is_self) {
+       $method = $route->getParameter('method');
+       if (!empty($method)) {
+-        $plugin = \Drupal::service('plugin.manager.tfa.validation')->createInstance($method, ['uid' => $target_user->id()]);
+-        if (method_exists($plugin, 'allowUserSetupAccess')) {
++        $validation_plugin_manager = \Drupal::service('plugin.manager.tfa.validation');
++        $validation_plugins = $validation_plugin_manager->getDefinitions();
++        $login_plugin_manager = \Drupal::service('plugin.manager.tfa.login');
++        $login_plugins = $login_plugin_manager->getDefinitions();
++        $plugin = NULL;
++        if (array_key_exists($method, $validation_plugins)) {
++          $plugin = $validation_plugin_manager->createInstance($method, ['uid' => $target_user->id()]);
++        }
++        if (array_key_exists($method, $login_plugins)) {
++          $plugin = $login_plugin_manager->createInstance($method, ['uid' => $target_user->id()]);
++        }
++        if (!empty($plugin) && method_exists($plugin, 'allowUserSetupAccess')) {
+           $ret = $plugin->allowUserSetupAccess($route, $account);
+           if ($ret === FALSE) {
+             return $access->andIf(AccessResult::forbidden("Access denied for $method plugin."));

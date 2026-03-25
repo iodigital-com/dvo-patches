@@ -1,0 +1,15 @@
+diff --git a/core/lib/Drupal/Component/Utility/Xss.php b/core/lib/Drupal/Component/Utility/Xss.php
+index e15a13e5c9..122a61e745 100644
+--- a/core/lib/Drupal/Component/Utility/Xss.php
++++ b/core/lib/Drupal/Component/Utility/Xss.php
+@@ -257,6 +257,10 @@ protected static function attributes($attributes) {
+         case 2:
+           // Attribute value, a URL after href= for instance.
+           if (preg_match('/^"([^"]*)"(\s+|$)/', $attributes, $match)) {
++            // Skip tokens.
++            if (!$skip_protocol_filtering && $attribute_name == 'href' && !empty($match[1])) {
++              $skip_protocol_filtering = ($match[1][0] === '[') && ($match[1][-1] === ']');
++            }
+             $value = $skip_protocol_filtering ? $match[1] : UrlHelper::filterBadProtocol($match[1]);
+ 
+             if (!$skip) {

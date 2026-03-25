@@ -1,0 +1,27 @@
+From f934d0e41c8d172d5f6d80c202dc7e820a55a5c3 Mon Sep 17 00:00:00 2001
+From: Caroline Boyden <cboyden@berkeley.edu>
+Date: Mon, 25 Aug 2025 19:59:25 -0700
+Subject: [PATCH] Issue #2897855: Use generic button instead of submit to open
+ entity browser modal
+
+---
+ src/Plugin/EntityBrowser/Display/Modal.php | 3 ++-
+ 1 file changed, 2 insertions(+), 1 deletion(-)
+
+diff --git a/src/Plugin/EntityBrowser/Display/Modal.php b/src/Plugin/EntityBrowser/Display/Modal.php
+index 90708860..77ce17f8 100644
+--- a/src/Plugin/EntityBrowser/Display/Modal.php
++++ b/src/Plugin/EntityBrowser/Display/Modal.php
+@@ -56,7 +56,8 @@ class Modal extends IFrame {
+         '#value' => Url::fromRoute('entity_browser.' . $this->configuration['entity_browser_id'], [], $data['query_parameters'])->toString(),
+       ],
+       'open_modal' => [
+-        '#type' => 'submit',
++        '#type' => 'button',
++        '#submit_button' => FALSE,
+         '#value' => $this->configuration['link_text'],
+         '#limit_validation_errors' => [],
+         '#submit' => [],
+-- 
+GitLab
+

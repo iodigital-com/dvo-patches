@@ -1,0 +1,15 @@
+diff --git a/src/Plugin/better_exposed_filters/filter/FilterWidgetBase.php b/src/Plugin/better_exposed_filters/filter/FilterWidgetBase.php
+index 2dad5e9..6cb913a 100644
+--- a/src/Plugin/better_exposed_filters/filter/FilterWidgetBase.php
++++ b/src/Plugin/better_exposed_filters/filter/FilterWidgetBase.php
+@@ -61,6 +61,10 @@ abstract class FilterWidgetBase extends BetterExposedFiltersWidgetBase implement
+       $is_applicable = TRUE;
+     }
+ 
++    if (is_a($filter, 'Drupal\facets_exposed_filters\Plugin\views\filter\FacetsFilter')) {
++      $is_applicable = TRUE;
++    }
++
+     return $is_applicable;
+   }
+ 

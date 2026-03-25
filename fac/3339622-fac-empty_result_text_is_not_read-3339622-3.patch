@@ -1,0 +1,215 @@
+diff --git a/js/jquery.fastautocomplete.js b/js/jquery.fastautocomplete.js
+index 20e2ac8..b293c19 100644
+--- a/js/jquery.fastautocomplete.js
++++ b/js/jquery.fastautocomplete.js
+@@ -38,7 +38,8 @@
+           'autocapitalize': 'none',
+           'spellcheck': 'false',
+           'aria-autocomplete':'list',
+-          'aria-owns': 'fac-result-' + settings.id + '-' + index
++          'aria-owns': 'fac-result-' + settings.id + '-' + index,
++          'aria-describedby': 'empty-result-' + settings.id + '-' + index
+         });
+ 
+         // Create the hidden result div.
+@@ -66,7 +67,7 @@
+         var $resultList = $('<ul>').attr({
+           'class': 'result-list hidden',
+           'role' : 'listbox',
+-          'aria-labelledby' : 'fac-announce-' + settings.id + '-' + index
++          'aria-label' : Drupal.t('results')
+         }).appendTo($facResult);
+ 
+         if (settings.allResultsLink) {
+@@ -84,14 +85,17 @@
+           });
+           $seeAllLink.css('cursor', 'pointer').mousedown(function (e) {
+             switch (e.which) {
+-              // Left mouse click.
++                // Left mouse click.
+               case 1:
+                 $(that).closest('form').submit();
+                 break;
+             }
+             e.preventDefault();
+           }).hover(function (e) {
++            // Clear all selected items and aria-activedescendant
+             $facResult.find('> ul.result-list > li.selected').removeClass('selected');
++            $(that).removeAttr('aria-activedescendant');
++            // Set new selection
+             $(this).addClass('selected');
+             $(that).attr('aria-activedescendant', $(this).attr('id'));
+           }).addClass('hidden');
+@@ -101,14 +105,15 @@
+         if (settings.emptyResult) {
+           // Add the empty result text.
+           var $emptyResults = $('<div>').attr({
+-            'class': 'empty-result'
++            'class': 'empty-result',
++            'id' : 'empty-result-' + settings.id + '-' + index
+           });
+           $emptyResults.html(settings.emptyResult);
+           $emptyResults.find('a').each(function () {
+             $(this).on('mousedown', function (e) {
+               e.preventDefault();
+               switch (e.which) {
+-                // Left mouse click.
++                  // Left mouse click.
+                 case 1:
+                   window.location = $(this).attr('href');
+                   break;
+@@ -163,19 +168,19 @@
+         $(this).on('keydown', function (e) {
+           if (settings.enabled) {
+             switch (e.keyCode) {
+-              // Down arrow.
++                // Down arrow.
+               case 40:
+                 selectDown($facResult, $(this));
+                 e.preventDefault();
+                 break;
+ 
+-              // Up arrow.
++                // Up arrow.
+               case 38:
+                 selectUp($facResult, $(this));
+                 e.preventDefault();
+                 break;
+ 
+-              // Enter.
++                // Enter.
+               case 13:
+                 var $selected = $facResult.find('li.selected:not(.see-all-link)');
+                 if ($selected.length) {
+@@ -187,12 +192,14 @@
+                 }
+                 break;
+ 
+-              // Esc.
++                // Esc.
+               case 27:
+                 if (facJsonRequest !== null) {
+                   facJsonRequest.abort();
+                 }
+                 $facResult.addClass('hidden');
++                // Clear aria-activedescendant when hiding results
++                $(this).removeAttr('aria-activedescendant');
+                 e.preventDefault();
+                 break;
+ 
+@@ -209,6 +216,8 @@
+               facJsonRequest.abort();
+             }
+             $facResult.addClass('hidden');
++            // Clear aria-activedescendant when hiding results
++            $(this).removeAttr('aria-activedescendant');
+           }
+         });
+ 
+@@ -282,7 +291,7 @@
+         },
+         success: function (data, status, xhr) {
+           if (data.items.length) {
+-            $announce.text(Drupal.formatPlural(data.items.length, '@count result found.', '@count results found.') + ' ' + Drupal.t('Use the up/down keys to navigate the results or press <ENTER> to show all results.'));
++            $announce.text(Drupal.formatPlural(data.items.length, '@count result found.', '@count results found.') + ' ' + Drupal.t('Navigate up/down to select results or confirm directly to view all results.'));
+             if ($seeAllLink) {
+               if (data.items.length >= settings.allResultsLinkThreshold) {
+                 $seeAllLink.find('> div > a').html(Drupal.t('See all results for "%key"', {'%key': $(element).val()}));
+@@ -293,6 +302,8 @@
+               }
+             }
+             $resultList.find('> li.result').remove();
++            // Clear aria-activedescendant when repopulating results
++            $(element).removeAttr('aria-activedescendant');
+             $emptyResult.addClass('hidden');
+             $.each(data.items, function (key, dataValue) {
+               var $item = $('<li class="result" role="option" id="facoption' + key + '">' + dataValue + '</li>');
+@@ -300,14 +311,17 @@
+               $item.css('cursor', 'pointer').mousedown(function (e) {
+                 e.preventDefault();
+                 switch (e.which) {
+-                  // Left mouse click.
++                    // Left mouse click.
+                   case 1:
+                     $item.find('a:not(.contextual-links a)')[0].click();
+                     break;
+ 
+                 }
+               }).hover(function (e) {
++                // Clear all selected items and aria-activedescendant
+                 $resultList.find('> li.selected').removeClass('selected');
++                $(element).removeAttr('aria-activedescendant');
++                // Set new selection
+                 $(element).attr('aria-activedescendant', 'facoption' + key);
+                 $(this).addClass('selected');
+               });
+@@ -328,6 +342,8 @@
+             $announce.text('No results found.');
+             $resultList.addClass('hidden');
+             $resultList.find('li.result').remove();
++            // Clear aria-activedescendant when no results
++            $(element).removeAttr('aria-activedescendant');
+             if ($seeAllLink) {
+               $seeAllLink.addClass('hidden');
+             }
+@@ -350,6 +366,8 @@
+         $announce.text('');
+         $resultList.addClass('hidden');
+         $resultList.find('> li.result').remove();
++        // Clear aria-activedescendant when clearing results
++        $(element).removeAttr('aria-activedescendant');
+         if ($seeAllLink) {
+           $seeAllLink.addClass('hidden');
+         }
+@@ -368,12 +386,21 @@
+     var $selected = $facResult.find(selector + ' > li.selected');
+     if ($selected.length) {
+       $selected.removeClass('selected');
+-      $selected.next('li').addClass('selected');
+-      $input.attr('aria-activedescendant', $selected.next('li').attr('id'));
++      var $next = $selected.next('li');
++      if ($next.length) {
++        $next.addClass('selected');
++        $input.attr('aria-activedescendant', $next.attr('id'));
++      } else {
++        // No next item, clear aria-activedescendant
++        $input.removeAttr('aria-activedescendant');
++      }
+     }
+     else {
+-      $facResult.find(selector + ' > li:first').addClass('selected');
+-      $input.attr('aria-activedescendant', $facResult.find(selector + ' > li:first').attr('id'));
++      var $first = $facResult.find(selector + ' > li:first');
++      if ($first.length) {
++        $first.addClass('selected');
++        $input.attr('aria-activedescendant', $first.attr('id'));
++      }
+     }
+   }
+ 
+@@ -386,12 +413,21 @@
+     var $selected = $facResult.find(selector + ' > li.selected');
+     if ($selected.length) {
+       $selected.removeClass('selected');
+-      $selected.prev('li').addClass('selected');
+-      $input.attr('aria-activedescendant', $selected.prev('li').attr('id'));
++      var $prev = $selected.prev('li');
++      if ($prev.length) {
++        $prev.addClass('selected');
++        $input.attr('aria-activedescendant', $prev.attr('id'));
++      } else {
++        // No previous item, clear aria-activedescendant
++        $input.removeAttr('aria-activedescendant');
++      }
+     }
+     else {
+-      $facResult.find(selector + ' > li:last').addClass('selected');
+-      $input.attr('aria-activedescendant', $facResult.find(selector + ' > li:last').attr('id'));
++      var $last = $facResult.find(selector + ' > li:last');
++      if ($last.length) {
++        $last.addClass('selected');
++        $input.attr('aria-activedescendant', $last.attr('id'));
++      }
+     }
+   }
+ 

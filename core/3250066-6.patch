@@ -1,0 +1,167 @@
+diff --git a/core/lib/Drupal/Core/Config/StorageComparer.php b/core/lib/Drupal/Core/Config/StorageComparer.php
+index c7ccc6b0fa38eb44b5aff1de6b5272f0d9c7955a..22cd2c376163bd45c4d20375771292114ba75e19 100644
+--- a/core/lib/Drupal/Core/Config/StorageComparer.php
++++ b/core/lib/Drupal/Core/Config/StorageComparer.php
+@@ -248,17 +248,34 @@ protected function addChangelistUpdate($collection) {
+     foreach (array_intersect($this->sourceNames[$collection], $this->targetNames[$collection]) as $name) {
+       $source_data = $this->getSourceStorage($collection)->read($name);
+       $target_data = $this->getTargetStorage($collection)->read($name);
+-      if ($source_data !== $target_data) {
+-        if (isset($source_data['uuid']) && $source_data['uuid'] !== $target_data['uuid']) {
+-          // The entity has the same file as an existing entity but the UUIDs do
+-          // not match. This means that the entity has been recreated so config
+-          // synchronization should do the same.
+-          $recreates[] = $name;
+-        }
+-        else {
+-          $this->addChangeList($collection, 'update', [$name]);
++
++      $recreate = FALSE;
++      if (isset($source_data['uuid']) && $source_data['uuid'] !== $target_data['uuid']) {
++        // The entity has the same file as an existing entity but the UUIDs do
++        // not match. This means that the entity has been recreated so config
++        // synchronization should do the same.
++        $recreate = TRUE;
++      }
++      elseif ($collection !== StorageInterface::DEFAULT_COLLECTION) {
++        $default_source_data = $this->getSourceStorage()->read($name);
++        $default_target_data = $this->getTargetStorage()->read($name);
++        if (isset($default_source_data['uuid']) && $default_target_data !== FALSE && $default_source_data['uuid'] !== $default_target_data['uuid']) {
++          // This means that this file does have an update, but the default
++          // collection has the config of the same name marked as recreate.
++          // We should also mark this config as been recreated, because it
++          // will lead to errors if this is marked as 'updated' while the
++          // parent is recreated.
++          // See: https://www.drupal.org/project/drupal/issues/3250066
++          $recreate = TRUE;
+         }
+       }
++
++      if ($recreate) {
++        $recreates[] = $name;
++      }
++      elseif ($source_data !== $target_data) {
++        $this->addChangeList($collection, 'update', [$name]);
++      }
+     }
+ 
+     if (!empty($recreates)) {
+diff --git a/core/tests/Drupal/Tests/Core/Config/StorageComparerTest.php b/core/tests/Drupal/Tests/Core/Config/StorageComparerTest.php
+index d79e7e19513123a0a571176299253eade83cb339..6ae0e1722a9d6863d931e0909a97e2f19b26b646 100644
+--- a/core/tests/Drupal/Tests/Core/Config/StorageComparerTest.php
++++ b/core/tests/Drupal/Tests/Core/Config/StorageComparerTest.php
+@@ -238,4 +238,114 @@ public function testCreateChangelistUpdate() {
+     $this->assertEmpty($this->storageComparer->getChangelist('delete'));
+   }
+ 
++  /**
++   * @covers ::createChangelist
++   */
++  public function testCreateChangelistRecreate() {
++    $target_data = $source_data = [
++      '' => $this->getConfigData(),
++      'language.nl' => [
++        'field.field.node.article.body' => [
++          'title' => 'Dutch article body title',
++        ],
++        'field.storage.node.body' => [
++          'title' => 'Dutch article body storage title',
++        ],
++        'views.view.test_view' => [
++          'title' => 'Dutch test_view title',
++        ],
++      ],
++    ];
++
++    $uuid = new Php();
++
++    // field.field.node.article.body: only change Dutch translation.
++    $source_data['language.nl']['field.field.node.article.body']['title'] = 'New Dutch article body title';
++    // field.storage.node.body: recreate default, don't change override.
++    $source_data['']['field.storage.node.body']['uuid'] = $uuid->generate();
++    // views.view.test_view: recreate parent, change override.
++    $source_data['']['views.view.test_view']['uuid'] = $uuid->generate();
++    $source_data['language.nl']['views.view.test_view']['title'] = 'New Dutch test_view title';
++
++    $this->sourceStorage->expects($this->atLeastOnce())
++      ->method('listAll')
++      ->will($this->returnValue(array_keys($source_data[''])));
++    $this->targetStorage->expects($this->atLeastOnce())
++      ->method('listAll')
++      ->will($this->returnValue(array_keys($target_data[''])));
++    $this->sourceStorage->expects($this->atLeastOnce())
++      ->method('readMultiple')
++      ->will($this->returnValue($source_data['']));
++    $this->targetStorage->expects($this->atLeastOnce())
++      ->method('readMultiple')
++      ->will($this->returnValue($target_data['']));
++    $this->sourceStorage->expects($this->atLeastOnce())
++      ->method('getAllCollectionNames')
++      ->will($this->returnValue(array_keys($source_data)));
++    $this->targetStorage->expects($this->atLeastOnce())
++      ->method('getAllCollectionNames')
++      ->will($this->returnValue(array_keys($target_data)));
++
++    $source_collection_storage = $this->createMock('Drupal\Core\Config\StorageInterface');
++    $target_collection_storage = $this->createMock('Drupal\Core\Config\StorageInterface');
++
++    $source_collection_storage->expects($this->atLeastOnce())
++      ->method('listAll')
++      ->will($this->returnValue(array_keys($source_data['language.nl'])));
++    $target_collection_storage->expects($this->atLeastOnce())
++      ->method('listAll')
++      ->will($this->returnValue(array_keys($target_data['language.nl'])));
++    $source_collection_storage->expects($this->atLeastOnce())
++      ->method('readMultiple')
++      ->will($this->returnValue($source_data['language.nl']));
++    $target_collection_storage->expects($this->atLeastOnce())
++      ->method('readMultiple')
++      ->will($this->returnValue($target_data['language.nl']));
++    $source_collection_storage->expects($this->atLeastOnce())
++      ->method('getCollectionName')
++      ->will($this->returnValue('language.nl'));
++    $target_collection_storage->expects($this->atLeastOnce())
++      ->method('getCollectionName')
++      ->will($this->returnValue('language.nl'));
++
++    $this->sourceStorage->expects($this->atLeastOnce())
++      ->method('createCollection')
++      ->will($this->returnValue($source_collection_storage));
++    $this->targetStorage->expects($this->atLeastOnce())
++      ->method('createCollection')
++      ->will($this->returnValue($target_collection_storage));
++
++    $this->storageComparer->createChangelist();
++
++    $changelist_default = [
++      'create' => [
++        'field.storage.node.body',
++        'views.view.test_view',
++      ],
++      'update' => [],
++      'delete' => [
++        'views.view.test_view',
++        'field.storage.node.body',
++      ],
++      'rename' => [],
++    ];
++    $changelist_nl = [
++      'create' => [
++        'field.storage.node.body',
++        'views.view.test_view',
++      ],
++      'update' => [
++        'field.field.node.article.body',
++      ],
++      'delete' => [
++        'views.view.test_view',
++        'field.storage.node.body',
++      ],
++      'rename' => [],
++    ];
++
++    $this->assertEquals($changelist_default, $this->storageComparer->getChangelist());
++    $this->assertEquals($changelist_nl, $this->storageComparer->getChangelist(NULL, 'language.nl'));
++  }
++
+ }

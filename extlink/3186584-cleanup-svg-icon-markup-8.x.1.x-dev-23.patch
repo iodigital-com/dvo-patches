@@ -1,0 +1,313 @@
+diff --git a/config/install/extlink.settings.yml b/config/install/extlink.settings.yml
+index 0ac847c..ccd15ca 100644
+--- a/config/install/extlink.settings.yml
++++ b/config/install/extlink.settings.yml
+@@ -19,5 +19,6 @@ extlink_mailto_class: 'mailto'
+ extlink_mailto_label: '(link sends email)'
+ extlink_use_font_awesome: false
+ extlink_font_awesome_classes: {  }
++extlink_svg_classes: {  }
+ extlink_icon_placement: 'append'
+ whitelisted_domains: { }
+diff --git a/config/schema/extlink.schema.yml b/config/schema/extlink.schema.yml
+index 2691047..02b1386 100644
+--- a/config/schema/extlink.schema.yml
++++ b/config/schema/extlink.schema.yml
+@@ -68,12 +68,28 @@ extlink.settings:
+       type: mapping
+       label: 'Font Awesome icon classes'
+       mapping:
++        generic:
++          type: string
++          label: 'Generic link classes'
+         links:
+           type: string
+           label: 'External link classes'
+         mailto:
+           type: string
+           label: 'Mailto link classes'
++    extlink_svg_classes:
++      type: mapping
++      label: 'SVG icon classes'
++      mapping:
++        generic:
++          type: string
++          label: 'SVG generic link classes'
++        links:
++          type: string
++          label: 'SVG external link classes'
++        mailto:
++          type: string
++          label: 'SVG mailto link classes'
+     extlink_icon_placement:
+       type: string
+       label: 'Add icon in front of any processed link.'
+diff --git a/extlink.css b/extlink.css
+index bb49b7f..6dfb5e6 100644
+--- a/extlink.css
++++ b/extlink.css
+@@ -3,37 +3,42 @@
+  * External links css file.
+  */
+ 
+-svg.ext {
+-  width: 14px;
+-  height: 14px;
+-  padding-right: 0.2em;
+-  fill: #727272;
+-  font-weight: 900;
++/* Make external-link SVG icons responsive (@supports so IE11 ignores this) */
++@supports (width: auto) {
++  .extlink--mailto,
++  .extlink--url {
++    width: auto;
++  }
++}
++
++/* set a default height of 9px if 1em = 16px on SVG icons. */
++.extlink--mailto {
++  height: .5625em;
++}
++
++/* set a default height of 10px if 1em = 16px on SVG icons. */
++.extlink--url {
++  height: .625em;
+ }
+ 
+-svg.mailto {
+-  width: 14px;
+-  height: 14px;
+-  padding-right: 0.2em;
+-  fill: #727272;
++/* Spacing between the external-link font-aswesome & SVG icons and the link text. */
++.extlink--prepend {
++  margin-right: .4em;
+ }
+ 
+-svg.ext path,
+-svg.mailto path {
+-  stroke: #727272;
+-  stroke-width: 3;
++.extlink--append {
++  margin-left: .4em
+ }
+ 
+-/* Hide the extra icons when printing. */
++/* make font-awesome external-link icons bold. */
++span.extlink {
++  font-weight: 900;
++}
++
++/* Hide the external-link icons when printing. */
+ @media print {
+-  svg.ext,
+-  svg.mailto {
++  .extlink {
+     display: none;
+     padding: 0;
+   }
+ }
+-
+-/* Put some whitespace between the link and its Font Awesome suffix. */
+-extlink i {
+-  padding-left: 0.2em;
+-}
+diff --git a/extlink.install b/extlink.install
+index c231633..b2f0f7a 100644
+--- a/extlink.install
++++ b/extlink.install
+@@ -33,3 +33,16 @@ function extlink_update_8102() {
+     ->set('extlink_exclude_admin_routes', FALSE)
+     ->save();
+ }
++
++/**
++ * Set default classes for SVG and font-awesome classes.
++ */
++function extlink_update_8103() {
++  \Drupal::configFactory()
++    ->getEditable('extlink.settings')
++    ->set('extFaGenericClasses', 'extlink')
++    ->set('extSvgGenericClasses', 'extlink')
++    ->set('extSvgLinkClasses', 'extlink--url')
++    ->set('extSvgMailtoClasses', 'extlink--mailto')
++    ->save();
++}
+diff --git a/extlink.js b/extlink.js
+index 7d57dc9..9e2389e 100644
+--- a/extlink.js
++++ b/extlink.js
+@@ -243,20 +243,28 @@
+     var length = $links_to_process.length;
+     for (i = 0; i < length; i++) {
+       var $link = $($links_to_process[i]);
++      var class_fa_generic = drupalSettings.data.extlink.extFaGenericClasses;
++      var class_fa_mailto = drupalSettings.data.extlink.extFaMailtoClasses;
++      var class_fa_link = drupalSettings.data.extlink.extFaLinkClasses;
++      var class_svg_generic = drupalSettings.data.extlink.extSvgGenericClasses;
++      var class_svg_mailto = drupalSettings.data.extlink.extSvgMailtoClasses;
++      var class_svg_link = drupalSettings.data.extlink.extSvgLinkClasses;
+       if (drupalSettings.data.extlink.extUseFontAwesome) {
++        let class_icon_placement = class_fa_generic + "--" + icon_placement;
+         if (class_name === drupalSettings.data.extlink.mailtoClass) {
+-          $link[icon_placement]('<span class="fa-' + class_name + ' extlink"><span class="' + drupalSettings.data.extlink.extFaMailtoClasses + '" aria-label="' + drupalSettings.data.extlink.mailtoLabel + '"></span></span>');
++          $link[icon_placement]('<span class="' + class_fa_generic + ' ' + class_icon_placement + ' fa-' + class_name + '"><span class="' + class_fa_mailto + '" aria-label="' + drupalSettings.data.extlink.mailtoLabel + '"></span></span>');
+         }
+         else {
+-          $link[icon_placement]('<span class="fa-' + class_name + ' extlink"><span class="' + drupalSettings.data.extlink.extFaLinkClasses + '" aria-label="' + drupalSettings.data.extlink.extLabel + '"></span></span>');
++          $link[icon_placement]('<span class="' + class_fa_generic + ' ' + class_icon_placement + ' fa-' + class_name + '"><span class="' + class_fa_link + '" aria-label="' + drupalSettings.data.extlink.extLabel + '"></span></span>');
+         }
+       }
+       else {
++        let class_icon_placement = class_svg_generic + "--" + icon_placement;
+         if (class_name === drupalSettings.data.extlink.mailtoClass) {
+-          $link[icon_placement]('<svg focusable="false" class="' + class_name + '" role="img" aria-label="' + drupalSettings.data.extlink.mailtoLabel + '" xmlns="http://www.w3.org/2000/svg" viewBox="0 10 70 20"><metadata><sfw xmlns="http://ns.adobe.com/SaveForWeb/1.0/"><sliceSourceBounds y="-8160" x="-8165" width="16389" height="16384" bottomLeftOrigin="true"/><optimizationSettings><targetSettings targetSettingsID="0" fileFormat="PNG24Format"><PNG24Format transparency="true" filtered="false" interlaced="false" noMatteColor="false" matteColor="#FFFFFF"/></targetSettings></optimizationSettings></sfw></metadata><title>' + drupalSettings.data.extlink.mailtoLabel + '</title><path d="M56 14H8c-1.1 0-2 0.9-2 2v32c0 1.1 0.9 2 2 2h48c1.1 0 2-0.9 2-2V16C58 14.9 57.1 14 56 14zM50.5 18L32 33.4 13.5 18H50.5zM10 46V20.3l20.7 17.3C31.1 37.8 31.5 38 32 38s0.9-0.2 1.3-0.5L54 20.3V46H10z"/></svg>');
++          $link[icon_placement]('<span class="visually-hidden">'+ drupalSettings.data.extlink.mailtoLabel +'</span><svg focusable="false" class="' + class_svg_generic + ' ' + class_icon_placement + ' ' + class_svg_mailto + '" role="img" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="20" height="14" viewBox="0 0 20 14"><title>' + drupalSettings.data.extlink.mailtoLabel + '</title><path fill="Currentcolor" d="M19.23 0H.77A.78.78 0 000 .78v12.44a.78.78 0 00.77.78h18.46a.78.78 0 00.77-.78V.78a.78.78 0 00-.77-.78zm-2.12 1.56L10 7.54 2.88 1.56zM1.54 12.44V2.45L9.5 9.18a1.08 1.08 0 00.5.15.8.8 0 00.5-.2l7.96-6.68v10z"/></svg>');
+         }
+         else {
+-          $link[icon_placement]('<svg focusable="false" class="' + class_name + '" role="img" aria-label="' + drupalSettings.data.extlink.extLabel + '" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 80 40"><metadata><sfw xmlns="http://ns.adobe.com/SaveForWeb/1.0/"><sliceSourceBounds y="-8160" x="-8165" width="16389" height="16384" bottomLeftOrigin="true"/><optimizationSettings><targetSettings targetSettingsID="0" fileFormat="PNG24Format"><PNG24Format transparency="true" filtered="false" interlaced="false" noMatteColor="false" matteColor="#FFFFFF"/></targetSettings></optimizationSettings></sfw></metadata><title>' + drupalSettings.data.extlink.extLabel + '</title><path d="M48 26c-1.1 0-2 0.9-2 2v26H10V18h26c1.1 0 2-0.9 2-2s-0.9-2-2-2H8c-1.1 0-2 0.9-2 2v40c0 1.1 0.9 2 2 2h40c1.1 0 2-0.9 2-2V28C50 26.9 49.1 26 48 26z"/><path d="M56 6H44c-1.1 0-2 0.9-2 2s0.9 2 2 2h7.2L30.6 30.6c-0.8 0.8-0.8 2 0 2.8C31 33.8 31.5 34 32 34s1-0.2 1.4-0.6L54 12.8V20c0 1.1 0.9 2 2 2s2-0.9 2-2V8C58 6.9 57.1 6 56 6z"/></svg>');
++          $link[icon_placement]('<span class="visually-hidden">'+ drupalSettings.data.extlink.extLabel +'</span><svg focusable="false" class="' + class_svg_generic + ' ' + class_icon_placement + ' ' + class_svg_link + '" role="img" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 14 14"><title>' + drupalSettings.data.extlink.extLabel + '</title><path fill="Currentcolor" d="M11.5 14H.5a.5.5 0 01-.5-.5v-11A.5.5 0 01.5 2H8a.5.5 0 010 1H1v10h10V6a.5.5 0 011 0v7.5a.5.5 0 01-.5.5z"/><path fill="Currentcolor" class="' + class_name + '__path" d="M7 7.5a.5.5 0 01-.35-.85L12.29 1H10a.5.5 0 010-1h3.5a.5.5 0 01.33.12.5.5 0 01.17.35V4a.5.5 0 01-1 0V1.7L7.35 7.36A.5.5 0 017 7.5z"/></svg>');
+         }
+       }
+     }
+diff --git a/extlink.module b/extlink.module
+index eef73b3..4bf57ba 100644
+--- a/extlink.module
++++ b/extlink.module
+@@ -83,6 +83,9 @@ function _extlink_get_settings_from_config(Config $config) {
+   \Drupal::moduleHandler()->alter('extlink_css_exclude', $settings['extlink_css_exclude']);
+ 
+   $callback = [Html::class, 'cleanCssIdentifier'];
++  $fa_generic_classes = $config->get('extlink_font_awesome_classes.generic') ?: 'extlink';
++  $fa_generic_classes = array_map($callback, explode(' ', $fa_generic_classes));
++
+   $fa_link_classes = $config->get('extlink_font_awesome_classes.links') ?: 'fa fa-external-link';
+   $fa_link_classes = array_map($callback, explode(' ', $fa_link_classes));
+ 
+@@ -100,6 +103,15 @@ function _extlink_get_settings_from_config(Config $config) {
+     }
+   }
+ 
++  $svg_generic_classes = $config->get('extlink_svg_classes.generic') ?: 'extlink';
++  $svg_generic_classes = array_map($callback, explode(' ', $svg_generic_classes));
++
++  $svg_link_classes = $config->get('extlink_svg_classes.links') ?: 'extlink--url';
++  $svg_link_classes = array_map($callback, explode(' ', $svg_link_classes));
++
++  $svg_mailto_classes = $config->get('extlink_svg_classes.mailto') ?: 'extlink--mailto';
++  $svg_mailto_classes = array_map($callback, explode(' ', $svg_mailto_classes));
++
+   return [
+     'extTarget'           => ((isset($settings['extlink_target'])) ? $settings['extlink_target'] : FALSE),
+     'extTargetNoOverride' => ((isset($settings['extlink_target_no_override'])) ? $settings['extlink_target_no_override'] : FALSE),
+@@ -120,8 +132,12 @@ function _extlink_get_settings_from_config(Config $config) {
+     'mailtoLabel'         => ((isset($settings['extlink_mailto_label'])) ? Html::escape($settings['extlink_mailto_label']) : t('(link sends email)')),
+     'extUseFontAwesome'   => ((isset($settings['extlink_use_font_awesome'])) ? $settings['extlink_use_font_awesome'] : FALSE),
+     'extIconPlacement'    => ((!empty($settings['extlink_icon_placement'])) ? $settings['extlink_icon_placement'] : 'append'),
++    'extFaGenericClasses' => implode(' ', $fa_generic_classes),
+     'extFaLinkClasses'    => implode(' ', $fa_link_classes),
+     'extFaMailtoClasses'  => implode(' ', $fa_mailto_classes),
++    'extSvgGenericClasses'=> implode(' ', $svg_generic_classes),
++    'extSvgLinkClasses'   => implode(' ', $svg_link_classes),
++    'extSvgMailtoClasses' => implode(' ', $svg_mailto_classes),
+     'whitelistedDomains'  => $config->get('whitelisted_domains'),
+   ];
+ }
+diff --git a/src/Form/ExtlinkAdminSettingsForm.php b/src/Form/ExtlinkAdminSettingsForm.php
+index 87e64ba..1010c3f 100644
+--- a/src/Form/ExtlinkAdminSettingsForm.php
++++ b/src/Form/ExtlinkAdminSettingsForm.php
+@@ -106,6 +106,19 @@ class ExtlinkAdminSettingsForm extends ConfigFormBase {
+       ],
+     ];
+ 
++    $form['extlink_font_awesome_classes']['generic'] = [
++      '#type' => 'textfield',
++      '#title' => $this->t('Font Awesome Generic Links Classes'),
++      '#default_value' => $config->get('extlink_font_awesome_classes.generic') ?: 'extlink',
++      '#states' => [
++        'visible' => [
++          [':input[name="extlink_mailto_class"]' => ['checked' => TRUE]],
++          'or',
++          [':input[name="extlink_class"]' => ['checked' => TRUE]],
++        ],
++      ],
++    ];
++
+     $form['extlink_font_awesome_classes']['links'] = [
+       '#type' => 'textfield',
+       '#title' => $this->t('Font Awesome External Links Classes'),
+@@ -128,6 +141,60 @@ class ExtlinkAdminSettingsForm extends ConfigFormBase {
+       ],
+     ];
+ 
++    $form['extlink_svg_classes'] = [
++      '#type' => 'details',
++      '#title' => $this->t('SVG icon classes'),
++      '#tree' => TRUE,
++      '#states' => [
++        'visible' => [
++          [
++            ':input[name="extlink_mailto_class"]' => ['checked' => TRUE],
++            ':input[name="extlink_use_font_awesome"]' => ['checked' => FALSE],
++          ],
++          'or',
++          [
++            ':input[name="extlink_class"]' => ['checked' => TRUE],
++            ':input[name="extlink_use_font_awesome"]' => ['checked' => FALSE],
++          ],
++        ],
++      ],
++    ];
++
++    $form['extlink_svg_classes']['generic'] = [
++      '#type' => 'textfield',
++      '#title' => $this->t('SVG Generic Links Classes'),
++      '#default_value' => $config->get('extlink_svg_classes.generic') ?: 'extlink',
++      '#states' => [
++        'visible' => [
++          [':input[name="extlink_mailto_class"]' => ['checked' => TRUE]],
++          'or',
++          [':input[name="extlink_class"]' => ['checked' => TRUE]],
++        ],
++      ],
++    ];
++
++    $form['extlink_svg_classes']['links'] = [
++      '#type' => 'textfield',
++      '#title' => $this->t('SVG External Links Classes'),
++      '#default_value' => $config->get('extlink_svg_classes.links') ?: 'extlink--url',
++      '#states' => [
++        'visible' => [
++          ':input[name="extlink_class"]' => ['checked' => TRUE],
++        ],
++      ],
++    ];
++
++    $form['extlink_svg_classes']['mailto'] = [
++      '#type' => 'textfield',
++      '#title' => $this->t('SVG mailto Links Classes'),
++      '#default_value' => $config->get('extlink_svg_classes.mailto') ?: 'extlink--mailto',
++      '#states' => [
++        'visible' => [
++          ':input[name="extlink_mailto_class"]' => ['checked' => TRUE],
++        ],
++      ],
++    ];
++
+     $form['extlink_icon_placement'] = [
+       '#type' => 'select',
+       '#title' => $this->t('Where to place icon in reference to link.'),
+@@ -329,8 +396,12 @@ class ExtlinkAdminSettingsForm extends ConfigFormBase {
+       ->set('extlink_use_font_awesome', $values['extlink_use_font_awesome'])
+       ->set('extlink_icon_placement', $values['extlink_icon_placement'])
+       ->set('extlink_use_font_awesome', $values['extlink_use_font_awesome'])
++      ->set('extlink_font_awesome_classes.generic', $values['extlink_font_awesome_classes']['generic'])
+       ->set('extlink_font_awesome_classes.links', $values['extlink_font_awesome_classes']['links'])
+       ->set('extlink_font_awesome_classes.mailto', $values['extlink_font_awesome_classes']['mailto'])
++      ->set('extlink_svg_classes.generic', $values['extlink_svg_classes']['generic'])
++      ->set('extlink_svg_classes.links', $values['extlink_svg_classes']['links'])
++      ->set('extlink_svg_classes.mailto', $values['extlink_svg_classes']['mailto'])
+       ->set('whitelisted_domains', $whitelisted_domains)
+       ->save();
+ 

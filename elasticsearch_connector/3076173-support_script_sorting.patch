@@ -1,0 +1,26 @@
+diff --git a/src/ElasticSearch/Parameters/Builder/SearchBuilder.php b/src/ElasticSearch/Parameters/Builder/SearchBuilder.php
+index 628a2c7..d984f5d 100644
+--- a/src/ElasticSearch/Parameters/Builder/SearchBuilder.php
++++ b/src/ElasticSearch/Parameters/Builder/SearchBuilder.php
+@@ -344,6 +344,21 @@ class SearchBuilder {
+     $sort = [];
+     $query_full_text_fields = $this->index->getFulltextFields();
+     foreach ($this->query->getSorts() as $field_id => $direction) {
++      if (is_array($direction)) {
++        if (strpos($field_id, '_script') !== FALSE) {
++          // For script sorting, the direction isn't actually a direction, but
++          // an array with a script and script configuration.
++          $payload = $direction;
++          $sort[$field_id] = $payload;
++
++          return $sort;
++        }
++        else {
++          // Invalid field_id/payload combo.
++          throw new \Exception(t('Invalid field_id and/or payload provided!'));
++        }
++      }
++
+       $direction = mb_strtolower($direction);
+ 
+       if ($field_id === 'search_api_relevance') {

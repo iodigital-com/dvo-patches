@@ -1,0 +1,60 @@
+diff --git a/config/schema/blue_billywig.schema.yml b/config/schema/blue_billywig.schema.yml
+index d87e506..ffd4d40 100644
+--- a/config/schema/blue_billywig.schema.yml
++++ b/config/schema/blue_billywig.schema.yml
+@@ -20,3 +20,55 @@ blue_billywig.settings:
+     embed_type:
+       type: string
+       label: 'The default embed type for embedded content.'
++
++field.formatter.settings.blue_billywig_embed_code:
++  type: mapping
++  label: 'Blue Billywig embed code formatter settings'
++  mapping:
++    playout:
++      type: string
++      label: 'The playout to use for embedded content'
++    embed_type:
++      type: string
++      label: 'The embed type to use for embedded content'
++
++field.field_settings.blue_billywig_id:
++  type: field.field_settings.string
++  label: 'Blue Billywig ID field settings'
++
++field.value.blue_billywig_id:
++  type: field.value.string
++  label: 'Blue Billywig ID field value'
++
++field.widget.settings.blue_billywig_id:
++  type: field.widget.settings.string_textfield
++  label: 'Blue Billywig ID widget settings'
++
++media.source.blue_billywig:
++  type: mapping
++  label: 'Blue Billywig media source settings'
++  mapping:
++    thumbnails_directory:
++      type: string
++      label: 'The directory where thumbnails will be stored'
++    source_field:
++      type: string
++      label: 'Field on media entity that contains the Blue Billywig ID'
++
++field.storage.media.field_media_blue_billywig:
++  type: field.storage.string
++  label: 'Blue Billywig media field storage settings'
++  mapping:
++    settings:
++      type: mapping
++      label: 'Blue Billywig media field settings'
++      mapping:
++        max_length:
++          type: integer
++          label: 'Maximum length'
++        is_ascii:
++          type: boolean
++          label: 'Is ASCII'
++        case_sensitive:
++          type: boolean
++          label: 'Case sensitive'

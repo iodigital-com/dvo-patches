@@ -1,0 +1,26 @@
+diff --git a/src/ScheduledTransitionsRunner.php b/src/ScheduledTransitionsRunner.php
+index 3464cb6..ebd289c 100644
+--- a/src/ScheduledTransitionsRunner.php
++++ b/src/ScheduledTransitionsRunner.php
+@@ -11,6 +11,7 @@ use Drupal\Core\Entity\EntityChangedInterface;
+ use Drupal\Core\Entity\EntityInterface;
+ use Drupal\Core\Entity\EntityTypeManagerInterface;
+ use Drupal\Core\Entity\RevisionLogInterface;
++use Drupal\Core\TypedData\TranslatableInterface;
+ use Drupal\Core\StringTranslation\StringTranslationTrait;
+ use Drupal\Core\Utility\Token;
+ use Drupal\scheduled_transitions\Entity\ScheduledTransition;
+@@ -134,6 +135,13 @@ class ScheduledTransitionsRunner implements ScheduledTransitionsRunnerInterface
+     $entityStorage = $this->entityTypeManager->getStorage($entity->getEntityTypeId());
+ 
+     $latestRevisionId = $entityStorage->getLatestRevisionId($entity->id());
++
++    $entityRevisionLanguage = $scheduledTransition->getEntityRevisionLanguage();
++    if ($entityRevisionLanguage && $newRevision instanceof TranslatableInterface && $newRevision->hasTranslation($entityRevisionLanguage)) {
++      $newRevision = $newRevision->getTranslation($entityRevisionLanguage);
++      $latestRevisionId = $entityStorage->getLatestTranslationAffectedRevisionId($entity->id(), $entityRevisionLanguage);
++    }
++
+     if ($latestRevisionId) {
+       /** @var \Drupal\Core\Entity\EntityInterface|\Drupal\Core\Entity\RevisionableInterface $latest */
+       $latest = $entityStorage->loadRevision($latestRevisionId);

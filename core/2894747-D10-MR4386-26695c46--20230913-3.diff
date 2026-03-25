@@ -1,0 +1,235 @@
+diff --git a/core/misc/ajax.js b/core/misc/ajax.js
+index 4396a46b86a5259127089c4f58687b050be3d596..cb4b4df7f954725a30670a87b7fc715a3acb51d0 100644
+--- a/core/misc/ajax.js
++++ b/core/misc/ajax.js
+@@ -1032,7 +1032,9 @@
+   Drupal.Ajax.prototype.success = function (response, status) {
+     // Remove the progress element.
+     if (this.progress.element) {
+-      $(this.progress.element).remove();
++      $(
++        `.${$(this.progress.element).attr('class').replace(/\s/g, '.')}`,
++      ).remove();
+     }
+     if (this.progress.object) {
+       this.progress.object.stopMonitoring();
+diff --git a/core/modules/media_library/tests/src/FunctionalJavascript/MediaOverviewTest.php b/core/modules/media_library/tests/src/FunctionalJavascript/MediaOverviewTest.php
+index 88e6cecb18c56e7e2973daf04f2fa7d26ebc1d9a..d3d5a6a784f264d676c83631c86c5278627524c9 100644
+--- a/core/modules/media_library/tests/src/FunctionalJavascript/MediaOverviewTest.php
++++ b/core/modules/media_library/tests/src/FunctionalJavascript/MediaOverviewTest.php
+@@ -105,7 +105,7 @@ public function testAdministrationPage() {
+ 
+     // Test that selecting elements as a part of bulk operations works.
+     $page->selectFieldOption('Media type', '- Any -');
+-    $assert_session->elementExists('css', '#views-exposed-form-media-library-page')->submit();
++    $assert_session->elementExists('css', '.views-exposed-form-media-library-page')->submit();
+     $this->waitForText('Dog');
+ 
+     // This tests that anchor tags clicked inside the preview are suppressed.
+diff --git a/core/modules/views/js/ajax_view.js b/core/modules/views/js/ajax_view.js
+index 30a8dc5b1135cea8ba04fdb8f9dba85ca0a78901..a1cba617cff648c7559dcc67c18e42c240486cd7 100644
+--- a/core/modules/views/js/ajax_view.js
++++ b/core/modules/views/js/ajax_view.js
+@@ -100,10 +100,10 @@
+ 
+     // Add the ajax to exposed forms.
+     this.$exposed_form = $(
+-      `form#views-exposed-form-${settings.view_name.replace(
++      `form[id^="views-exposed-form-${settings.view_name.replace(
+         /_/g,
+         '-',
+-      )}-${settings.view_display_id.replace(/_/g, '-')}`,
++      )}-${settings.view_display_id.replace(/_/g, '-')}"]`,
+     );
+     once('exposed-form', this.$exposed_form).forEach(
+       $.proxy(this.attachExposedFormAjax, this),
+diff --git a/core/modules/views/src/Form/ViewsExposedForm.php b/core/modules/views/src/Form/ViewsExposedForm.php
+index bd6a9edd93cf7be31cbab5dc672a39b9df4ce4cc..a2eae030a70ac7f245b8a592bf3ac6e428566d87 100644
+--- a/core/modules/views/src/Form/ViewsExposedForm.php
++++ b/core/modules/views/src/Form/ViewsExposedForm.php
+@@ -144,7 +144,10 @@ public function buildForm(array $form, FormStateInterface $form_state) {
+ 
+     $form['#action'] = $form_action;
+     $form['#theme'] = $view->buildThemeFunctions('views_exposed_form');
+-    $form['#id'] = Html::cleanCssIdentifier('views_exposed_form-' . $view->storage->id() . '-' . $display['id']);
++    $clean_form_id = Html::cleanCssIdentifier('views_exposed_form-' . $view->storage->id() . '-' . $display['id']);
++    $form['#attributes']['class'][] = $clean_form_id;
++    // The form can be possibly rendered twice on a page, make the id unique.
++    $form['#id'] = Html::getUniqueId($clean_form_id);
+     // Labels are built too late for inline form errors to work, resulting
+     // in duplicated messages.
+     $form['#disable_inline_form_errors'] = TRUE;
+diff --git a/core/modules/views/tests/src/Functional/Plugin/ExposedFormTest.php b/core/modules/views/tests/src/Functional/Plugin/ExposedFormTest.php
+index b653c352795cb133ae0f32573060d60f04ab1ebd..c4fe919145eea17444cb82f2d3b7bc9c2300bb80 100644
+--- a/core/modules/views/tests/src/Functional/Plugin/ExposedFormTest.php
++++ b/core/modules/views/tests/src/Functional/Plugin/ExposedFormTest.php
+@@ -2,6 +2,7 @@
+ 
+ namespace Drupal\Tests\views\Functional\Plugin;
+ 
++use Drupal\Component\Render\FormattableMarkup;
+ use Drupal\Component\Utility\Html;
+ use Drupal\entity_test\Entity\EntityTest;
+ use Drupal\Tests\system\Functional\Cache\AssertPageCacheContextsAndTagsTrait;
+@@ -260,9 +261,9 @@ public function testExposedBlock($display) {
+     $this->assertSession()->elementNotExists('xpath', $xpath);
+ 
+     // Test there is only one views exposed form on the page.
+-    $xpath = '//form[@id="' . $this->getExpectedExposedFormId($view) . '"]';
+-    $this->assertSession()->elementsCount('xpath', $xpath, 1);
+-    $element = $this->assertSession()->elementExists('xpath', $xpath);
++    $css_selector = 'form[id^="' . $this->getExpectedExposedFormId($view) . '"]';
++    $this->assertSession()->elementsCount('css', $css_selector, 1);
++    $element = $this->assertSession()->elementExists('css', $css_selector);
+ 
+     // Test that the correct option is selected after form submission.
+     $this->assertCacheContext('url');
+@@ -296,6 +297,20 @@ public function providerTestExposedBlock() {
+     ];
+   }
+ 
++  /**
++   * Test placing the same form twice on the same page.
++   */
++  public function testNoDoubleIdsForSameExposedForm() {
++    $view = Views::getView('test_exposed_block');
++    $view->setDisplay('page_1');
++    $this->drupalPlaceBlock('views_exposed_filter_block:test_exposed_block-page_1');
++    $this->drupalPlaceBlock('views_exposed_filter_block:test_exposed_block-page_1');
++
++    $this->drupalGet('test_exposed_block');
++
++    $this->assertNoDuplicateIds();
++  }
++
+   /**
+    * Tests the input required exposed form type.
+    */
+@@ -510,6 +525,31 @@ protected function assertNodesExist(array $bundles): void {
+     }
+   }
+ 
++  /**
++   * Asserts that each HTML ID is used for just a single element on the page.
++   */
++  protected function assertNoDuplicateIds() {
++    $args = ['@url' => $this->getUrl()];
++
++    if (!$elements = $this->xpath('//*[@id]')) {
++      $this->fail(new FormattableMarkup('The page @url contains no HTML IDs.', $args));
++      return;
++    }
++
++    $message = new FormattableMarkup('The page @url contains duplicate HTML IDs', $args);
++
++    $seen_ids = [];
++    foreach ($elements as $element) {
++      $id = $element->getAttribute('id');
++      if (isset($seen_ids[$id])) {
++        $this->fail($message);
++        return;
++      }
++      $seen_ids[$id] = TRUE;
++    }
++    $this->assertTrue(TRUE, $message);
++  }
++
+   /**
+    * Tests the "Remember the last selection" functionality.
+    */
+diff --git a/core/modules/views/tests/src/FunctionalJavascript/BlockExposedFilterAJAXTest.php b/core/modules/views/tests/src/FunctionalJavascript/BlockExposedFilterAJAXTest.php
+index 27b399434dd945818153d71991a40bfc6cc5da4d..3fa7270c893edbf3e4c7f9695ea35cabb9ec544a 100644
+--- a/core/modules/views/tests/src/FunctionalJavascript/BlockExposedFilterAJAXTest.php
++++ b/core/modules/views/tests/src/FunctionalJavascript/BlockExposedFilterAJAXTest.php
+@@ -93,4 +93,65 @@ public function testExposedFilteringAndReset() {
+     $this->assertSession()->addressEquals('some-path');
+   }
+ 
++  /**
++   * Test that AJAX works with two exposed blocks on the same page.
++   */
++  public function testExposedFilterWithDoubleExposedBlock() {
++    $node = $this->createNode();
++    $block1 = $this->drupalPlaceBlock('views_block:test_block_exposed_ajax-block_1');
++    $block2 = $this->drupalPlaceBlock('views_block:test_block_exposed_ajax-block_1');
++    $this->drupalGet($node->toUrl());
++
++    $page = $this->getSession()->getPage();
++
++    // Ensure that the Content we're testing for is present.
++    $this->assertCount(2, $page->findAll('xpath', '//*[text()="Page A"]'));
++    $this->assertCount(2, $page->findAll('xpath', '//*[text()="Page B"]'));
++    $this->assertCount(2, $page->findAll('xpath', '//*[text()="Article A"]'));
++
++    $form1 = $page->find('css', '#block-' . $block1->id() . ' form');
++    $form1_id = $form1->getAttribute('id');
++    // Filter by page type in the first form.
++    $this->submitForm(['type' => 'page'], t('Apply'), $form1_id);
++    $this->waitForCount(1, 'xpath', '//*[text()="Article A"]');
++    $this->assertCount(2, $page->findAll('xpath', '//*[text()="Page A"]'));
++    $this->assertCount(2, $page->findAll('xpath', '//*[text()="Page B"]'));
++    $this->assertCount(1, $page->findAll('xpath', '//*[text()="Article A"]'));
++
++    $form2 = $page->find('css', '#block-' . $block2->id() . ' form');
++    $form2_id = $form2->getAttribute('id');
++    // Filter by page type in the second form.
++    $this->submitForm(['type' => 'page'], t('Apply'), $form2_id);
++    $this->waitForCount(1, 'xpath', '//*[text()="Article A"]');
++    $this->assertCount(2, $page->findAll('xpath', '//*[text()="Page A"]'));
++    $this->assertCount(2, $page->findAll('xpath', '//*[text()="Page B"]'));
++    $this->assertCount(1, $page->findAll('xpath', '//*[text()="Article A"]'));
++  }
++
++  /**
++   * Looks for the selector and waits for the the count is matched.
++   *
++   * @param int $count
++   *   The count to match.
++   * @param string $selector
++   *   The selector engine name. See ElementInterface::findAll() for the
++   *   supported selectors.
++   * @param string|array $locator
++   *   The selector locator.
++   * @param int $timeout
++   *   (Optional) Timeout in milliseconds, defaults to 10000.
++   *
++   * @return bool
++   *   TRUE if count was matched, FALSE if not.
++   */
++  protected function waitForCount($count, $selector, $locator, $timeout = 10000) {
++    $page = $this->getSession()->getPage();
++
++    $result = $page->waitFor($timeout / 1000, function () use ($page, $count, $selector, $locator) {
++      return count($page->findAll($selector, $locator)) === $count;
++    });
++
++    return $result;
++  }
++
+ }
+diff --git a/core/modules/views/tests/src/Kernel/Plugin/ExposedFormRenderTest.php b/core/modules/views/tests/src/Kernel/Plugin/ExposedFormRenderTest.php
+index a581f8922cc361458fc2f6deb095062a4cb695ed..c3287f9af0e672139da925df2bc62fd9ffe49ca6 100644
+--- a/core/modules/views/tests/src/Kernel/Plugin/ExposedFormRenderTest.php
++++ b/core/modules/views/tests/src/Kernel/Plugin/ExposedFormRenderTest.php
+@@ -43,7 +43,7 @@ public function testExposedFormRender() {
+     $output = $exposed_form->renderExposedForm();
+     $this->setRawContent(\Drupal::service('renderer')->renderRoot($output));
+ 
+-    $this->assertFieldByXpath('//form/@id', Html::cleanCssIdentifier('views-exposed-form-' . $view->storage->id() . '-' . $view->current_display), 'Expected form ID found.');
++    $this->assertFieldByXpath('//form/@id', Html::cleanCssIdentifier('views-exposed-form-' . $view->storage->id() . '-' . $view->current_display . '--2'), 'Expected form ID found.');
+ 
+     $view->setDisplay('page_1');
+     $expected_action = $view->display_handler->getUrlInfo()->toString();
+diff --git a/core/modules/views/tests/src/Kernel/ViewElementTest.php b/core/modules/views/tests/src/Kernel/ViewElementTest.php
+index a62ce859754e0f12591513fbc75363eb85179a20..333cfdd80e61d5043c2d5af95950a7c7c2bd3aff 100644
+--- a/core/modules/views/tests/src/Kernel/ViewElementTest.php
++++ b/core/modules/views/tests/src/Kernel/ViewElementTest.php
+@@ -126,7 +126,7 @@ public function testViewElementEmbed() {
+     $this->setRawContent($renderer->renderRoot($render));
+ 
+     // Ensure that the exposed form is rendered.
+-    $this->assertCount(1, $this->xpath('//form[@class="views-exposed-form"]'));
++    $this->assertCount(1, $this->xpath('//form[@class="views-exposed-form views-exposed-form-test-view-embed-embed-2"]'));
+   }
+ 
+   /**

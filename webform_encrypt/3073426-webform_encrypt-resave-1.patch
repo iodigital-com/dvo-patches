@@ -1,0 +1,50 @@
+diff --git a/src/WebformEncryptSubmissionStorage.php b/src/WebformEncryptSubmissionStorage.php
+index d2f07c6..65e7333 100644
+--- a/src/WebformEncryptSubmissionStorage.php
++++ b/src/WebformEncryptSubmissionStorage.php
+@@ -143,6 +143,12 @@ class WebformEncryptSubmissionStorage extends WebformSubmissionStorage {
+    * @throws \Drupal\encrypt\Exception\EncryptException
+    */
+   protected function encrypt($string, EncryptionProfileInterface $encryption_profile) {
++    // Prevent multiple encryptions.
++    $unserialized = @unserialize($string, ['allowed_classes' => FALSE]);
++    if ($unserialized !== FALSE && !empty($unserialized['data']) && !empty($unserialized['encrypt_profile'])) {
++      return $string;
++    }
++
+     // Serialize the data to include the encryption profile.
+     // This is used later to check for changes in the profile.
+     $encrypted_data = [
+@@ -169,8 +175,8 @@ class WebformEncryptSubmissionStorage extends WebformSubmissionStorage {
+     if ($check_permissions && !$this->currentUser->hasPermission('view encrypted values')) {
+       return '[Value Encrypted]';
+     }
+-    $unserialized = unserialize($data);
+-    if (isset($unserialized['data']) && isset($unserialized['encrypt_profile'])) {
++    $unserialized = @unserialize($data, ['allowed_classes' => FALSE]);
++    if ($unserialized !== FALSE && isset($unserialized['data']) && isset($unserialized['encrypt_profile'])) {
+       $encryption_profile = EncryptionProfile::load($unserialized['encrypt_profile']);
+       return $this->encryptionService->decrypt($unserialized['data'], $encryption_profile);
+     }
+@@ -236,6 +242,21 @@ class WebformEncryptSubmissionStorage extends WebformSubmissionStorage {
+     }
+   }
+ 
++  /**
++   * {@inheritdoc}
++   */
++  public function resave(EntityInterface $entity) {
++    /** @var \Drupal\webform\WebformSubmissionInterface $entity */
++
++    $data_original = $entity->getData();
++    $webform = $entity->getWebform();
++
++    $encrypted_data = $this->encryptElements($data_original, $webform);
++    $entity->setData($encrypted_data);
++
++    return parent::resave($entity);
++  }
++
+   /**
+    * {@inheritdoc}
+    */

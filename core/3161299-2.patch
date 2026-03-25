@@ -1,0 +1,13 @@
+diff --git a/core/modules/media_library/src/Plugin/Field/FieldWidget/MediaLibraryWidget.php b/core/modules/media_library/src/Plugin/Field/FieldWidget/MediaLibraryWidget.php
+index f957b77fdd..5e2290340b 100644
+--- a/core/modules/media_library/src/Plugin/Field/FieldWidget/MediaLibraryWidget.php
++++ b/core/modules/media_library/src/Plugin/Field/FieldWidget/MediaLibraryWidget.php
+@@ -322,7 +322,7 @@ public function formElement(FieldItemListInterface $items, $delta, array $elemen
+         [$this, 'preRenderWidget'],
+       ],
+       '#attached' => [
+-        'library' => ['media_library/widget'],
++        'library' => ['media_library/widget', 'media_library/ui'],
+       ],
+       '#theme_wrappers' => [
+         'fieldset__media_library_widget',

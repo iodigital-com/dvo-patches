@@ -1,0 +1,86 @@
+diff --git a/src/Plugin/Block/OpenReadspeakerBlock.php b/src/Plugin/Block/OpenReadspeakerBlock.php
+index d0238bb..5fd499b 100644
+--- a/src/Plugin/Block/OpenReadspeakerBlock.php
++++ b/src/Plugin/Block/OpenReadspeakerBlock.php
+@@ -19,7 +19,8 @@ use Symfony\Component\HttpFoundation\Request;
+  *  admin_label = @Translation("Open readspeaker block"),
+  * )
+  */
+-class OpenReadspeakerBlock extends BlockBase implements ContainerFactoryPluginInterface {
++class OpenReadspeakerBlock extends BlockBase implements ContainerFactoryPluginInterface
++{
+ 
+   /**
+    * Admin config object.
+@@ -28,6 +29,13 @@ class OpenReadspeakerBlock extends BlockBase implements ContainerFactoryPluginIn
+    */
+   protected $configFactory;
+ 
++  /**
++   * The current request.
++   *
++   * @var \Symfony\Component\HttpFoundation\Request
++   */
++  protected $request;
++
+   /**
+    * Constructs a Drupal\Component\Plugin\PluginBase object.
+    *
+@@ -47,7 +55,8 @@ class OpenReadspeakerBlock extends BlockBase implements ContainerFactoryPluginIn
+     $plugin_id,
+     $plugin_definition,
+     ConfigFactoryInterface $config_factory,
+-    Request $request) {
++    Request $request
++  ) {
+     parent::__construct($configuration, $plugin_id, $plugin_definition);
+     $this->configFactory = $config_factory;
+     $this->request = $request;
+@@ -56,7 +65,8 @@ class OpenReadspeakerBlock extends BlockBase implements ContainerFactoryPluginIn
+   /**
+    * {@inheritdoc}
+    */
+-  public static function create(ContainerInterface $container, array $configuration, $plugin_id, $plugin_definition) {
++  public static function create(ContainerInterface $container, array $configuration, $plugin_id, $plugin_definition)
++  {
+     return new static(
+       $configuration,
+       $plugin_id,
+@@ -69,7 +79,8 @@ class OpenReadspeakerBlock extends BlockBase implements ContainerFactoryPluginIn
+   /**
+    * {@inheritdoc}
+    */
+-  public function blockForm($form, FormStateInterface $form_state) {
++  public function blockForm($form, FormStateInterface $form_state)
++  {
+ 
+     $form['open_readspeaker_buttonstyle'] = [
+       '#type' => 'textfield',
+@@ -112,7 +123,8 @@ class OpenReadspeakerBlock extends BlockBase implements ContainerFactoryPluginIn
+   /**
+    * {@inheritdoc}
+    */
+-  public function blockSubmit($form, FormStateInterface $form_state) {
++  public function blockSubmit($form, FormStateInterface $form_state)
++  {
+     $this->configuration['open_readspeaker_buttonstyle'] = $form_state->getValue('open_readspeaker_buttonstyle');
+     $this->configuration['open_readspeaker_buttontext'] = $form_state->getValue('open_readspeaker_buttontext');
+     $this->configuration['open_readspeaker_buttontitle'] = $form_state->getValue('open_readspeaker_buttontitle');
+@@ -123,7 +135,8 @@ class OpenReadspeakerBlock extends BlockBase implements ContainerFactoryPluginIn
+   /**
+    * {@inheritdoc}
+    */
+-  public function build() {
++  public function build()
++  {
+     $config = $this->configFactory->get('open_readspeaker.settings');
+     $accountid = $config->get('open_readspeaker_accountid');
+     $cdn = $config->get('open_readspeaker_cdn_region');
+@@ -168,5 +181,4 @@ class OpenReadspeakerBlock extends BlockBase implements ContainerFactoryPluginIn
+     ];
+     return $build;
+   }
+-
+-}
++}
+\ No newline at end of file

@@ -1,0 +1,14 @@
+diff --git a/src/Plugin/WebformElement/Date.php b/src/Plugin/WebformElement/Date.php
+index 63c1bd261..c8d42f64d 100644
+--- a/src/Plugin/WebformElement/Date.php
++++ b/src/Plugin/WebformElement/Date.php
+@@ -37,7 +37,8 @@ class Date extends DateBase {
+       'placeholder' => '',
+       'step' => '',
+       'size' => '',
+-    ] + parent::defineDefaultProperties();
++      'autocomplete' => 'on',
++      ] + parent::defineDefaultProperties();
+     return $properties;
+   }
+ 

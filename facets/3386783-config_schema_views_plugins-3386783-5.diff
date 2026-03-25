@@ -1,0 +1,58 @@
+diff --git a/config/schema/facets.views.schema.yml b/config/schema/facets.views.schema.yml
+new file mode 100644
+index 0000000000000000000000000000000000000000..9ded3cf6deaca5d912af8e633c377033e5f2f185
+--- /dev/null
++++ b/config/schema/facets.views.schema.yml
+@@ -0,0 +1,25 @@
++views.area.facets_area:
++  type: views_area
++  label: 'Facets area'
++  mapping:
++    facets:
++      type: sequence
++      label: 'Facets'
++      sequence:
++        type: string
++    label_display:
++      type: boolean
++      label: 'Display block title'
++
++views.filter.facets_filter:
++  type: views_filter
++  label: 'Facets filter'
++  mapping:
++    facets:
++      type: sequence
++      label: 'Facets'
++      sequence:
++        type: string
++    label_display:
++      type: boolean
++      label: 'Display block title'
+diff --git a/modules/facets_summary/config/schema/facets_summary.views.schema.yml b/modules/facets_summary/config/schema/facets_summary.views.schema.yml
+new file mode 100644
+index 0000000000000000000000000000000000000000..8cb89a6c0aa5eb92487938b28546e5f8062ca336
+--- /dev/null
++++ b/modules/facets_summary/config/schema/facets_summary.views.schema.yml
+@@ -0,0 +1,21 @@
++views.area.facets_summary_area:
++  type: views_area
++  label: 'Facets summary area'
++  mapping:
++    facet_summary:
++      type: string
++      label: 'Facet summary'
++    label_display:
++      type: boolean
++      label: 'Display block title'
++
++views.filter.facets_summary_filter:
++  type: views_filter
++  label: 'Facets summary filter'
++  mapping:
++    facet_summary:
++      type: string
++      label: 'Facet summary'
++    label_display:
++      type: boolean
++      label: 'Display block title'

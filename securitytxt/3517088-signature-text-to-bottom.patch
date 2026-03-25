@@ -1,0 +1,30 @@
+diff --git a/src/SecuritytxtSerializer.php b/src/SecuritytxtSerializer.php
+index 76ad5bf..6935057 100644
+--- a/src/SecuritytxtSerializer.php
++++ b/src/SecuritytxtSerializer.php
+@@ -91,12 +91,6 @@ class SecuritytxtSerializer {
+         $content .= 'Hiring: ' . $hiring_url . "\n";
+       }
+ 
+-      if ($enabled_signature) {
+-        $signature_text = $settings->get('signature_text');
+-        $content = "-----BEGIN PGP SIGNED MESSAGE-----\n\n" . $content;
+-        $content .= "\n-----BEGIN PGP SIGNATURE-----\n" . $signature_text . "\n-----END PGP SIGNATURE-----\n";
+-      }
+-
+       if ($preferred_languages != '') {
+         $content .= 'Preferred-Languages: ' . $preferred_languages . "\n";
+       }
+@@ -105,6 +99,12 @@ class SecuritytxtSerializer {
+         $content .= $this->formatCanonical($canonical_urls);
+       }
+ 
++      if ($enabled_signature) {
++        $signature_text = $settings->get('signature_text');
++        $content = "-----BEGIN PGP SIGNED MESSAGE-----\n\n" . $content;
++        $content .= "\n-----BEGIN PGP SIGNATURE-----\n" . $signature_text . "\n-----END PGP SIGNATURE-----\n";
++      }
++
+       return $content;
+     }
+     else {

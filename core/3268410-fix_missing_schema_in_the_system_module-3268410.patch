@@ -1,0 +1,44 @@
+diff --git a/core/modules/system/config/schema/system.schema.yml b/core/modules/system/config/schema/system.schema.yml
+--- a/core/modules/system/config/schema/system.schema.yml	(revision e275ee169a9b51b276302a926ff2efadbdab7338)
++++ b/core/modules/system/config/schema/system.schema.yml	(date 1646760352572)
+@@ -53,6 +53,19 @@
+       type: text
+       label: 'Message to display when in maintenance mode'
+ 
++system.authorize:
++  type: mapping
++  label: 'Authorize settings'
++  mapping:
++    filetransfer_default:
++      type: string
++      label: 'Default file transfer protocol'
++    langcode:
++      type: string
++      label: 'Language code'
++    _core:
++      type: _core_config_info
++
+ system.cron:
+   type: config_object
+   label: 'Cron settings'
+@@ -188,10 +201,20 @@
+   type: config_object
+   label: 'Feed settings'
+   mapping:
++    channel:
++      type: mapping
++      label: 'Feed channel'
++      mapping:
++        description:
++          type: text
++          label: 'Feed description'
+     items:
+       type: mapping
+       label: 'Feed items'
+       mapping:
++        limit:
++          type: integer
++          label: 'Feed item limit'
+         view_mode:
+           type: string
+           label: 'Feed content'

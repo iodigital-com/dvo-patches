@@ -1,0 +1,266 @@
+From ec141fb6dff62d1c9152103ffb59a08ed9b2452d Mon Sep 17 00:00:00 2001
+From: Bram Driesen <bramdriesen94@gmail.com>
+Date: Mon, 16 Dec 2024 20:25:35 +0000
+Subject: [PATCH 1/2] feat: Apply patch 8
+
+---
+ .../Parameters/Builder/SearchBuilder.php      | 73 +++++++++++++++++++
+ .../Parameters/Factory/SearchFactory.php      | 31 ++++++++
+ .../backend/SearchApiElasticsearchBackend.php |  2 +-
+ 3 files changed, 105 insertions(+), 1 deletion(-)
+
+diff --git a/src/ElasticSearch/Parameters/Builder/SearchBuilder.php b/src/ElasticSearch/Parameters/Builder/SearchBuilder.php
+index 644a3790..e6001046 100644
+--- a/src/ElasticSearch/Parameters/Builder/SearchBuilder.php
++++ b/src/ElasticSearch/Parameters/Builder/SearchBuilder.php
+@@ -77,6 +77,27 @@ class SearchBuilder {
+     $indexFactory = \Drupal::service('elasticsearch_connector.index_factory');
+     $params = $indexFactory->index($this->index);
+ 
++    // Set search_api_spellcheck options if enabled.
++    if ($this->index->getServerInstance()->supportsFeature('search_api_spellcheck')) {
++      $keys = $this->query->getKeys();
++      if (is_string($keys)) {
++        $keys = explode(' ', $keys);
++      }
++      // Don't set the option if $keys is NULL.
++      if ($keys) {
++        if (!is_array($keys)) {
++          throw new \InvalidArgumentException('The selected parse mode for fulltext fields is not compatible to Search API Spellcheck.');
++        }
++        $this->query->setOption('search_api_spellcheck', [
++          // Strip non numeric array keys like '#collation'.
++          'keys' => array_filter($keys, 'is_int', ARRAY_FILTER_USE_KEY),
++          // This parameter specifies the maximum number of suggestions that the
++          // spellchecker should return for a term.
++          'count' => 10,
++        ]);
++      }
++    }
++
+     $query_options = $this->getSearchQueryOptions();
+ 
+     // Set the size and from parameters.
+@@ -128,6 +149,9 @@ class SearchBuilder {
+     // More Like This.
+     $this->setMoreLikeThisQuery($query_options);
+ 
++    // Spellcheck.
++    $this->setSpellCheckQuery($query_options);
++
+     $params['body'] = $this->body;
+     // Preserve the options for further manipulation if necessary.
+     $this->query->setOption('ElasticParams', $params);
+@@ -260,6 +284,12 @@ class SearchBuilder {
+       $mlt = $query_options['search_api_mlt'];
+     }
+ 
++    // Spellcheck.
++    $spellcheck = [];
++    if (isset($query_options['search_api_spellcheck'])) {
++      $spellcheck = array_merge($query_options['search_api_spellcheck'], ['query' => $search_string]);
++    }
++
+     $elasticSearchQuery = [
+       'query_offset' => $query_offset,
+       'query_limit' => $query_limit,
+@@ -267,6 +297,7 @@ class SearchBuilder {
+       'query_search_filter' => $query_search_filter,
+       'sort' => $sort,
+       'mlt' => $mlt,
++      'spellcheck' => $spellcheck,
+     ];
+ 
+     // Allow other modules to alter the search query before we create it.
+@@ -618,4 +649,46 @@ class SearchBuilder {
+     }
+   }
+ 
++  /**
++   * Setup the SpellCheck clause of the Elasticsearch query.
++   *
++   * Adjusts $this->body to have a spellcheck query.
++   *
++   * @param array $query_options
++   *   Array of query options. We're most interested here in the key of 'spellcheck',
++   *   which should contain the following keys:
++   *   ??
++   */
++  protected function setSpellCheckQuery(array $query_options) {
++    if (!empty($query_options['spellcheck'])) {
++
++      // Elasticsearch will not provide easy 'phrase suggester' with collate
++      // unless fields schema is declare in a specific way.
++      // Also multi-field suggester does not seems implemented.
++      // @see https://www.elastic.co/guide/en/elasticsearch/reference/current/search-suggesters.html
++
++      // As a solution, we build a request here to get suggestions for each
++      // individual fields. If multiple words are given in the search term,
++      // results will be returned per-words, per-fields and we will combined
++      // per term results.
++      // @see Drupal\elasticsearch_connector\ElasticSearch\Parameters\Factory\SearchFactory::parseResults()
++
++      // Module drupal/search_api_spellcheck module assume terms are suggested
++      // separately and will combine per term results to one.
++      // @see Drupal\search_api_spellcheck\Plugin\views\area\SuggestionsSpellCheck::render()
++
++      $query_full_text_fields = $this->index->getFulltextFields();
++      $terms = implode(' ', $query_options['spellcheck']['keys']);
++      foreach ((array) $query_full_text_fields as $fieldname) {
++        $suggester_query[$fieldname] = [
++          'text' => $terms,
++          'term' => [
++            'field' => $fieldname,
++            'size' => $query_options['spellcheck']['count'],
++          ],
++        ];
++      }
++      $this->body['suggest'] = $suggester_query;
++    }
++  }
+ }
+diff --git a/src/ElasticSearch/Parameters/Factory/SearchFactory.php b/src/ElasticSearch/Parameters/Factory/SearchFactory.php
+index 4e130a85..3b2bdbc1 100644
+--- a/src/ElasticSearch/Parameters/Factory/SearchFactory.php
++++ b/src/ElasticSearch/Parameters/Factory/SearchFactory.php
+@@ -69,6 +69,37 @@ class SearchFactory {
+       }
+     }
+ 
++    // Extract 'spellcheck'.
++    if (!empty($response['suggest'])) {
++      $candidates = [];
++      $suggestions = $response['suggest'];
++
++      // Suggestions are build exposing there suggest per fulltext configured
++      // field for the elasticsearch index.
++      foreach ($suggestions as $id => $field_suggestions) {
++        foreach ($field_suggestions as $term_corrections) {
++          foreach ($term_corrections['options'] as $option) {
++            $initial_term = $term_corrections['text'];
++            $suggested_term = $option['text'];
++            $score = $option['score'];
++            $candidates[$initial_term]["$score"] = $suggested_term;
++          }
++        }
++      }
++
++      // Dedupe and sort by relevancy.
++      $max_count = $query->getOption('search_api_spellcheck')['count'];
++      foreach ($candidates as $key => $values) {
++        krsort($values);
++        $candidates[$key] = array_values(array_slice($values, 0, $max_count));
++      }
++
++      // Set under the search_api_spellcheck->suggestions key.
++      $results->setExtraData('search_api_spellcheck', [
++        'suggestions' => $candidates
++      ]);
++    }
++
+     return $results;
+   }
+ 
+diff --git a/src/Plugin/search_api/backend/SearchApiElasticsearchBackend.php b/src/Plugin/search_api/backend/SearchApiElasticsearchBackend.php
+index e153a4ec..d424e519 100644
+--- a/src/Plugin/search_api/backend/SearchApiElasticsearchBackend.php
++++ b/src/Plugin/search_api/backend/SearchApiElasticsearchBackend.php
+@@ -313,7 +313,6 @@ class SearchApiElasticsearchBackend extends BackendPluginBase implements PluginF
+    *
+    * @todo implement 'search_api_multi',
+    * @todo implement 'search_api_service_extra',
+-   * @todo implement 'search_api_spellcheck',
+    * @todo implement 'search_api_data_type_location',
+    * @todo implement 'search_api_data_type_geohash',
+    */
+@@ -325,6 +324,7 @@ class SearchApiElasticsearchBackend extends BackendPluginBase implements PluginF
+       'search_api_facets_operator_or',
+       'search_api_grouping',
+       'search_api_mlt',
++      'search_api_spellcheck'
+     ];
+   }
+ 
+-- 
+GitLab
+
+
+From cefc9c95329783938ed7e07bf2f697ac634f12a8 Mon Sep 17 00:00:00 2001
+From: M Parker <mparker17@536298.no-reply.drupal.org>
+Date: Tue, 30 Sep 2025 15:41:54 -0400
+Subject: [PATCH 2/2] PHPCS: Fix automatically-fixable lints.
+
+---
+ src/ElasticSearch/Parameters/Builder/SearchBuilder.php    | 8 +++-----
+ src/ElasticSearch/Parameters/Factory/SearchFactory.php    | 2 +-
+ .../search_api/backend/SearchApiElasticsearchBackend.php  | 2 +-
+ 3 files changed, 5 insertions(+), 7 deletions(-)
+
+diff --git a/src/ElasticSearch/Parameters/Builder/SearchBuilder.php b/src/ElasticSearch/Parameters/Builder/SearchBuilder.php
+index e6001046..9792c2ed 100644
+--- a/src/ElasticSearch/Parameters/Builder/SearchBuilder.php
++++ b/src/ElasticSearch/Parameters/Builder/SearchBuilder.php
+@@ -655,8 +655,8 @@ class SearchBuilder {
+    * Adjusts $this->body to have a spellcheck query.
+    *
+    * @param array $query_options
+-   *   Array of query options. We're most interested here in the key of 'spellcheck',
+-   *   which should contain the following keys:
++   *   Array of query options. We're most interested here in the key of
++   *   'spellcheck', which should contain the following keys:
+    *   ??
+    */
+   protected function setSpellCheckQuery(array $query_options) {
+@@ -666,17 +666,14 @@ class SearchBuilder {
+       // unless fields schema is declare in a specific way.
+       // Also multi-field suggester does not seems implemented.
+       // @see https://www.elastic.co/guide/en/elasticsearch/reference/current/search-suggesters.html
+-
+       // As a solution, we build a request here to get suggestions for each
+       // individual fields. If multiple words are given in the search term,
+       // results will be returned per-words, per-fields and we will combined
+       // per term results.
+       // @see Drupal\elasticsearch_connector\ElasticSearch\Parameters\Factory\SearchFactory::parseResults()
+-
+       // Module drupal/search_api_spellcheck module assume terms are suggested
+       // separately and will combine per term results to one.
+       // @see Drupal\search_api_spellcheck\Plugin\views\area\SuggestionsSpellCheck::render()
+-
+       $query_full_text_fields = $this->index->getFulltextFields();
+       $terms = implode(' ', $query_options['spellcheck']['keys']);
+       foreach ((array) $query_full_text_fields as $fieldname) {
+@@ -691,4 +688,5 @@ class SearchBuilder {
+       $this->body['suggest'] = $suggester_query;
+     }
+   }
++
+ }
+diff --git a/src/ElasticSearch/Parameters/Factory/SearchFactory.php b/src/ElasticSearch/Parameters/Factory/SearchFactory.php
+index 3b2bdbc1..3dab37c5 100644
+--- a/src/ElasticSearch/Parameters/Factory/SearchFactory.php
++++ b/src/ElasticSearch/Parameters/Factory/SearchFactory.php
+@@ -96,7 +96,7 @@ class SearchFactory {
+ 
+       // Set under the search_api_spellcheck->suggestions key.
+       $results->setExtraData('search_api_spellcheck', [
+-        'suggestions' => $candidates
++        'suggestions' => $candidates,
+       ]);
+     }
+ 
+diff --git a/src/Plugin/search_api/backend/SearchApiElasticsearchBackend.php b/src/Plugin/search_api/backend/SearchApiElasticsearchBackend.php
+index d424e519..1c32486d 100644
+--- a/src/Plugin/search_api/backend/SearchApiElasticsearchBackend.php
++++ b/src/Plugin/search_api/backend/SearchApiElasticsearchBackend.php
+@@ -324,7 +324,7 @@ class SearchApiElasticsearchBackend extends BackendPluginBase implements PluginF
+       'search_api_facets_operator_or',
+       'search_api_grouping',
+       'search_api_mlt',
+-      'search_api_spellcheck'
++      'search_api_spellcheck',
+     ];
+   }
+ 
+-- 
+GitLab
+

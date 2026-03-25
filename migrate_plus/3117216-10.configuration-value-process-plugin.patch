@@ -1,0 +1,104 @@
+diff --git a/src/Plugin/migrate/process/ConfigurationValue.php b/src/Plugin/migrate/process/ConfigurationValue.php
+new file mode 100644
+index 0000000..dbe2fd1
+--- /dev/null
++++ b/src/Plugin/migrate/process/ConfigurationValue.php
+@@ -0,0 +1,98 @@
++<?php
++
++namespace Drupal\migrate_plus\Plugin\migrate\process;
++
++use Drupal\Core\Plugin\ContainerFactoryPluginInterface;
++use Drupal\migrate\Plugin\Exception\BadPluginDefinitionException;
++use Drupal\migrate\MigrateExecutableInterface;
++use Drupal\migrate\ProcessPluginBase;
++use Drupal\migrate\Row;
++use Symfony\Component\DependencyInjection\ContainerInterface;
++use Drupal\Core\Config\ConfigFactoryInterface;
++
++/**
++ * Returns a value from the current site configuration.
++ *
++ * To get a single configuration string value, use the following:
++ * @code
++ * field_text:
++ *   plugin: configuration_value
++ *   name: 'google_analytics.settings'
++ *   key: account
++ * @endcode
++ *
++ * If the value is in an array, use the following to return the entire array:
++ * @code
++ * field_text:
++ *   plugin: configuration_value
++ *   name: 'system.site'
++ *   key: page
++ * @endcode
++ *
++ * Or, this to return a single value:
++ * @code
++ * field_text:
++ *   plugin: configuration_value
++ *   name: 'system.site'
++ *   key: 'page.front'
++ * @endcode
++ *
++ * @MigrateProcessPlugin(
++ *   id = "configuration_value"
++ * )
++ */
++class ConfigurationValue extends ProcessPluginBase implements ContainerFactoryPluginInterface {
++
++  /**
++   * The configuration factory service.
++   *
++   * @var \Drupal\Core\Config\ConfigFactoryInterface
++   */
++  protected $configFactory;
++
++  /**
++   * Constructs a ConfigurationValue plugin.
++   *
++   * @param array $configuration
++   *   The plugin configuration.
++   * @param string $plugin_id
++   *   The plugin ID.
++   * @param mixed $plugin_definition
++   *   The plugin definition.
++   * @param \Drupal\Core\Config\ConfigFactoryInterface $config_factory
++   *   The configuration factory service.
++   *
++   * @throws \Drupal\migrate\Plugin\Exception\BadPluginDefinitionException
++   */
++  public function __construct(array $configuration, $plugin_id, $plugin_definition, ConfigFactoryInterface $config_factory) {
++    parent::__construct($configuration, $plugin_id, $plugin_definition);
++    $this->configFactory = $config_factory;
++    if (!isset($this->configuration['name'])) {
++      throw new BadPluginDefinitionException('configuration_value', 'name');
++    }
++    if (!isset($this->configuration['key'])) {
++      throw new BadPluginDefinitionException('configuration_value', 'key');
++    }
++  }
++
++  /**
++   * {@inheritdoc}
++   */
++  public static function create(ContainerInterface $container, array $configuration, $plugin_id, $plugin_definition) {
++    return new static(
++      $configuration,
++      $plugin_id,
++      $plugin_definition,
++      $container->get('config.factory')
++    );
++  }
++
++  /**
++   * {@inheritdoc}
++   */
++  public function transform($value, MigrateExecutableInterface $migrate_executable, Row $row, $destination_property) {
++    $config = $this->configFactory->get($this->configuration['name']);
++    return $config->get($this->configuration['key']);
++  }
++
++}

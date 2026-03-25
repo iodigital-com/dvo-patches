@@ -1,0 +1,17 @@
+diff --git a/js/focal_point_preview.js b/js/focal_point_preview.js
+index 7d18e42..d7df481 100644
+--- a/js/focal_point_preview.js
++++ b/js/focal_point_preview.js
+@@ -47,6 +47,12 @@
+         });
+       });
+ 
++      // Add onload event on the image to trigger a one-time window resize to
++      // fix modal positioning.
++      $focalPointImagePreview.one('load', function() {
++        $(window).trigger('resize');
++      });
++
+       // Add some window events for reverting to the original image.
+       $(window).click(function (event) {
+         resetPreview();

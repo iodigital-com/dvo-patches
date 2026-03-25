@@ -1,0 +1,199 @@
+diff --git a/config/install/seckit.settings.yml b/config/install/seckit.settings.yml
+index a059577..0c20bfa 100644
+--- a/config/install/seckit.settings.yml
++++ b/config/install/seckit.settings.yml
+@@ -16,6 +16,7 @@ seckit_xss:
+     child-src: ''
+     font-src: ''
+     connect-src: ''
++    base-uri: '''self'''
+     report-uri: '/report-csp-violation'
+     upgrade-req: FALSE
+     policy-uri: ''
+diff --git a/config/schema/seckit.schema.yml b/config/schema/seckit.schema.yml
+index d0ef25b..f657944 100644
+--- a/config/schema/seckit.schema.yml
++++ b/config/schema/seckit.schema.yml
+@@ -59,6 +59,9 @@ seckit.settings:
+             connect-src:
+               type: string
+               label: 'Connect src'
++            base-uri:
++              type: string
++              label: 'Base URI'
+             report-uri:
+               type: string
+               label: 'Report URI'
+diff --git a/js/seckit.listener.js b/js/seckit.listener.js
+index 550a26c..186e875 100644
+--- a/js/seckit.listener.js
++++ b/js/seckit.listener.js
+@@ -102,6 +102,7 @@ function _seckit_csp_remove_attributes(context) {
+     $('#edit-seckit-xss-csp-child-src', context).removeAttr('disabled');
+     $('#edit-seckit-xss-csp-font-src', context).removeAttr('disabled');
+     $('#edit-seckit-xss-csp-connect-src', context).removeAttr('disabled');
++    $('#edit-seckit-xss-csp-base-uri', context).removeAttr('disabled');
+     $('#edit-seckit-xss-csp-report-uri', context).removeAttr('disabled');
+   })(jQuery);
+ }
+@@ -122,6 +123,7 @@ function _seckit_csp_add_attributes(context) {
+     $('#edit-seckit-xss-csp-child-src', context).attr('disabled', 'disabled');
+     $('#edit-seckit-xss-csp-font-src', context).attr('disabled', 'disabled');
+     $('#edit-seckit-xss-csp-connect-src', context).attr('disabled', 'disabled');
++    $('#edit-seckit-xss-csp-base-uri', context).attr('disabled', 'disabled');
+     $('#edit-seckit-xss-csp-report-uri', context).attr('disabled', 'disabled');
+   })(jQuery);
+ }
+diff --git a/seckit.install b/seckit.install
+index abb655c..9210efb 100644
+--- a/seckit.install
++++ b/seckit.install
+@@ -24,3 +24,12 @@ function seckit_update_8102() {
+       ->save(TRUE);
+   }
+ }
++
++/**
++ * Add base-uri to seckit module configuration.
++ */
++function seckit_update_8103() {
++  \Drupal::configFactory()->getEditable('seckit.settings')
++    ->set('seckit_xss.csp.base-uri', "'self'")
++    ->save();
++}
+diff --git a/src/EventSubscriber/SecKitEventSubscriber.php b/src/EventSubscriber/SecKitEventSubscriber.php
+index 8870d1a..ad1f767 100644
+--- a/src/EventSubscriber/SecKitEventSubscriber.php
++++ b/src/EventSubscriber/SecKitEventSubscriber.php
+@@ -221,6 +221,7 @@ class SecKitEventSubscriber implements EventSubscriberInterface {
+     $csp_child_src = $this->config->get('seckit_xss.csp.child-src');
+     $csp_font_src = $this->config->get('seckit_xss.csp.font-src');
+     $csp_connect_src = $this->config->get('seckit_xss.csp.connect-src');
++    $csp_base_uri = $this->config->get('seckit_xss.csp.base-uri');
+     $csp_report_uri = $this->config->get('seckit_xss.csp.report-uri');
+     $csp_upgrade_req = $this->config->get('seckit_xss.csp.upgrade-req');
+     // $csp_policy_uri = $this->config->get('seckit_xss.csp.policy-uri');
+@@ -266,6 +267,9 @@ class SecKitEventSubscriber implements EventSubscriberInterface {
+     if ($csp_connect_src) {
+       $directives[] = "connect-src $csp_connect_src";
+     }
++    if ($csp_base_uri) {
++      $directives[] = "base-uri $csp_base_uri";
++    }
+     if ($csp_report_uri) {
+       $base_path = '';
+       if (!UrlHelper::isExternal($csp_report_uri)) {
+diff --git a/src/Form/SecKitSettingsForm.php b/src/Form/SecKitSettingsForm.php
+index e334b0f..dc66e28 100644
+--- a/src/Form/SecKitSettingsForm.php
++++ b/src/Form/SecKitSettingsForm.php
+@@ -278,6 +278,14 @@ class SecKitSettingsForm extends ConfigFormBase {
+       '#title' => 'connect-src',
+       '#description' => $this->t('Specify trustworthy sources for XMLHttpRequest, WebSocket and EventSource connections.'),
+     ];
++    // CSP base-uri directive.
++    $form['seckit_xss']['csp']['base-uri'] = [
++      '#type' => 'textfield',
++      '#maxlength' => 1024,
++      '#default_value' => $config->get('seckit_xss.csp.base-uri'),
++      '#title' => 'base-uri',
++      '#description' => $this->t("Specify a URL which can be used in a document's base element (e.g. 'self')."),
++    ];
+     // CSP report-uri directive.
+     $form['seckit_xss']['csp']['report-uri'] = [
+       '#type' => 'textarea',
+diff --git a/tests/src/Functional/SecKitTestCaseTest.php b/tests/src/Functional/SecKitTestCaseTest.php
+index cb6f171..43396b0 100644
+--- a/tests/src/Functional/SecKitTestCaseTest.php
++++ b/tests/src/Functional/SecKitTestCaseTest.php
+@@ -105,12 +105,13 @@ class SecKitTestCaseTest extends BrowserTestBase {
+       'seckit_xss[csp][child-src]' => '*',
+       'seckit_xss[csp][font-src]' => '*',
+       'seckit_xss[csp][connect-src]' => '*',
++      'seckit_xss[csp][base-uri]' => '*',
+       'seckit_xss[csp][report-uri]' => $this->reportPath,
+       'seckit_xss[csp][upgrade-req]' => TRUE,
+     ];
+     $this->drupalGet('admin/config/system/seckit');
+     $this->submitForm($form, 'Save configuration');
+-    $expected = 'default-src *; script-src *; object-src *; style-src *; img-src *; media-src *; frame-src *; frame-ancestors *; child-src *; font-src *; connect-src *; report-uri ' . base_path() . $this->reportPath . '; upgrade-insecure-requests';
++    $expected = 'default-src *; script-src *; object-src *; style-src *; img-src *; media-src *; frame-src *; frame-ancestors *; child-src *; font-src *; connect-src *; base-uri *; report-uri ' . base_path() . $this->reportPath . '; upgrade-insecure-requests';
+     $this->assertSession()->responseHeaderEquals('Content-Security-Policy', $expected);
+     $this->assertSession()->responseHeaderEquals('X-Content-Security-Policy', $expected);
+     $this->assertSession()->responseHeaderEquals('X-WebKit-CSP', $expected);
+@@ -135,12 +136,13 @@ class SecKitTestCaseTest extends BrowserTestBase {
+       'seckit_xss[csp][child-src]' => '*',
+       'seckit_xss[csp][font-src]' => '*',
+       'seckit_xss[csp][connect-src]' => '*',
++      'seckit_xss[csp][base-uri]' => '*',
+       'seckit_xss[csp][report-uri]' => $this->reportPath,
+       'seckit_xss[csp][upgrade-req]' => TRUE,
+     ];
+     $this->drupalGet('admin/config/system/seckit');
+     $this->submitForm($form, 'Save configuration');
+-    $expected = 'default-src *; script-src *; object-src *; style-src *; img-src *; media-src *; frame-src *; frame-ancestors *; child-src *; font-src *; connect-src *; report-uri ' . base_path() . $this->reportPath . '; upgrade-insecure-requests';
++    $expected = 'default-src *; script-src *; object-src *; style-src *; img-src *; media-src *; frame-src *; frame-ancestors *; child-src *; font-src *; connect-src *; base-uri *; report-uri ' . base_path() . $this->reportPath . '; upgrade-insecure-requests';
+     $this->assertSession()->responseHeaderEquals('Content-Security-Policy', $expected);
+     $this->assertSession()->responseHeaderDoesNotExist('X-Content-Security-Policy');
+     $this->assertSession()->responseHeaderDoesNotExist('X-WebKit-CSP');
+@@ -165,12 +167,13 @@ class SecKitTestCaseTest extends BrowserTestBase {
+       'seckit_xss[csp][child-src]' => '*',
+       'seckit_xss[csp][font-src]' => '*',
+       'seckit_xss[csp][connect-src]' => '*',
++      'seckit_xss[csp][base-uri]' => '*',
+       'seckit_xss[csp][report-uri]' => $this->reportPath,
+       'seckit_xss[csp][upgrade-req]' => TRUE,
+     ];
+     $this->drupalGet('admin/config/system/seckit');
+     $this->submitForm($form, 'Save configuration');
+-    $expected = 'default-src *; script-src *; object-src *; style-src *; img-src *; media-src *; frame-src *; frame-ancestors *; child-src *; font-src *; connect-src *; report-uri ' . base_path() . $this->reportPath . '; upgrade-insecure-requests';
++    $expected = 'default-src *; script-src *; object-src *; style-src *; img-src *; media-src *; frame-src *; frame-ancestors *; child-src *; font-src *; connect-src *; base-uri *; report-uri ' . base_path() . $this->reportPath . '; upgrade-insecure-requests';
+     $this->assertSession()->responseHeaderEquals('Content-Security-Policy', $expected);
+     $this->assertSession()->responseHeaderEquals('X-Content-Security-Policy', $expected);
+     $this->assertSession()->responseHeaderDoesNotExist('X-WebKit-CSP');
+@@ -195,12 +198,13 @@ class SecKitTestCaseTest extends BrowserTestBase {
+       'seckit_xss[csp][child-src]' => '*',
+       'seckit_xss[csp][font-src]' => '*',
+       'seckit_xss[csp][connect-src]' => '*',
++      'seckit_xss[csp][base-uri]' => '*',
+       'seckit_xss[csp][report-uri]' => $this->reportPath,
+       'seckit_xss[csp][upgrade-req]' => TRUE,
+     ];
+     $this->drupalGet('admin/config/system/seckit');
+     $this->submitForm($form, 'Save configuration');
+-    $expected = 'default-src *; script-src *; object-src *; style-src *; img-src *; media-src *; frame-src *; frame-ancestors *; child-src *; font-src *; connect-src *; report-uri ' . base_path() . $this->reportPath . '; upgrade-insecure-requests';
++    $expected = 'default-src *; script-src *; object-src *; style-src *; img-src *; media-src *; frame-src *; frame-ancestors *; child-src *; font-src *; connect-src *; base-uri *; report-uri ' . base_path() . $this->reportPath . '; upgrade-insecure-requests';
+     $this->assertSession()->responseHeaderEquals('Content-Security-Policy', $expected);
+     $this->assertSession()->responseHeaderDoesNotExist('X-Content-Security-Policy');
+     $this->assertSession()->responseHeaderEquals('X-WebKit-CSP', $expected);
+@@ -227,6 +231,7 @@ class SecKitTestCaseTest extends BrowserTestBase {
+       'seckit_xss[csp][child-src]'   => '*',
+       'seckit_xss[csp][font-src]'    => '*',
+       'seckit_xss[csp][connect-src]' => '*',
++      'seckit_xss[csp][base-uri]'    => '*',
+       'seckit_xss[csp][report-uri]'  => $this->reportPath,
+       'seckit_xss[csp][policy-uri]'  => 'http://mysite.com/csp.xml',
+     ];
+@@ -265,7 +270,7 @@ class SecKitTestCaseTest extends BrowserTestBase {
+     ];
+     $this->drupalGet('admin/config/system/seckit');
+     $this->submitForm($form, 'Save configuration');
+-    $expected = "default-src self; report-uri " . base_path() . $this->reportPath;
++    $expected = "default-src self; base-uri 'self'; report-uri " . base_path() . $this->reportPath;
+     $this->assertSession()->responseHeaderEquals('Content-Security-Policy', $expected);
+     $this->assertSession()->responseHeaderEquals('X-Content-Security-Policy', $expected);
+     $this->assertSession()->responseHeaderEquals('X-WebKit-CSP', $expected);
+@@ -339,11 +344,11 @@ class SecKitTestCaseTest extends BrowserTestBase {
+       $this->submitForm($form, 'Save configuration');
+       if ($report_uri['valid']) {
+         $base_path = ($report_uri['absolute']) ? '' : base_path();
+-        $expected = 'default-src self; report-uri ' . $base_path . $report_uri['uri'];
++        $expected = 'default-src self; base-uri 'self'; report-uri ' . $base_path . $report_uri['uri'];
+         if (!$report_uri['absolute'] && strpos($report_uri['uri'], '/') === 0) {
+           // In this case, check that the leading slash on the relative path
+           // was not mistakenly turned into two leading slashes.
+-          $expected = 'default-src self; report-uri ' . $base_path . ltrim($report_uri['uri'], '/');
++          $expected = 'default-src self; base-uri 'self'; report-uri ' . $base_path . ltrim($report_uri['uri'], '/');
+         }
+         $this->assertSession()->responseHeaderEquals('Content-Security-Policy', $expected);
+         $this->assertSession()->responseHeaderEquals('X-Content-Security-Policy', $expected);

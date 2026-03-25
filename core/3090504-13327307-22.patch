@@ -1,0 +1,25 @@
+diff --git a/core/modules/views/src/Controller/ViewAjaxController.php b/core/modules/views/src/Controller/ViewAjaxController.php
+index a4a3d2538dc25c61cd7e971e51b8f4e345caf856..b85b4dd9a082a2efe0cbecf0a6383284cd0b0ecc 100644
+--- a/core/modules/views/src/Controller/ViewAjaxController.php
++++ b/core/modules/views/src/Controller/ViewAjaxController.php
+@@ -218,6 +218,20 @@ public function ajaxView(Request $request) {
+           $response->setAttachments($preview['#attached']);
+         }
+ 
++        // Views with ajax enabled aren't refreshing filters placed in blocks.
++        // Only <div> containing view is refreshed. ReplaceCommand is fixing
++        // that for view, if it uses ajax and exposed forms in block.
++        if ($response instanceof ViewAjaxResponse && $view = $response->getView()) {
++          $display_handler = $view->display_handler;
++          if ($display_handler->ajaxEnabled() && $display_handler->usesExposedFormInBlock()) {
++            $form = $display_handler->viewExposedFormBlocks();
++            if ($form) {
++              $rendered_form = $this->renderer->renderRoot($form);
++              $response->addCommand(new ReplaceCommand("[data-drupal-selector={$form['#id']}] form", $rendered_form));
++            }
++          }
++        }
++
+         return $response;
+       }
+       else {

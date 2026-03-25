@@ -1,0 +1,36 @@
+diff --git a/src/ElasticSearch/Parameters/Factory/MappingFactory.php b/src/ElasticSearch/Parameters/Factory/MappingFactory.php
+index d681ade..4d18b9c 100644
+--- a/src/ElasticSearch/Parameters/Factory/MappingFactory.php
++++ b/src/ElasticSearch/Parameters/Factory/MappingFactory.php
+@@ -25,15 +25,23 @@ class MappingFactory {
+ 
+     switch ($type) {
+       case 'text':
+-        $mappingConfig = [
+-          'type' => 'text',
+-          'fields' => [
+-            "keyword" => [
+-              "type" => 'keyword',
+-              'ignore_above' => 256,
++        if (isset($field->getConfiguration()['type'])) {
++          if ($field->getConfiguration()['type'] == 'union') {
++            $mappingConfig = [
++              'type' => 'keyword',
++            ];
++          }
++        } else {
++          $mappingConfig = [
++            'type' => 'text',
++            'fields' => [
++              "keyword" => [
++                "type" => 'keyword',
++                'ignore_above' => 256,
++              ],
+             ],
+-          ],
+-        ];
++          ];
++        }
+         break;
+ 
+       case 'uri':

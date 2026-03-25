@@ -1,0 +1,359 @@
+diff --git a/core/modules/config_translation/config_translation.module b/core/modules/config_translation/config_translation.module
+index e22ecd8270..529c4dc7e7 100644
+--- a/core/modules/config_translation/config_translation.module
++++ b/core/modules/config_translation/config_translation.module
+@@ -7,9 +7,12 @@
+ 
+ use Drupal\Core\Url;
+ use Drupal\Core\Config\Entity\ConfigEntityInterface;
++use Drupal\Core\Entity\Display\EntityDisplayInterface;
+ use Drupal\Core\Entity\EntityInterface;
+ use Drupal\Core\Routing\RouteMatchInterface;
+ use Drupal\field\FieldConfigInterface;
++use Drupal\config_translation\ConfigTranslation\EntityDisplayMapper;
++use Drupal\config_translation\Controller\ConfigTranslationEntityDisplayListBuilder;
+ 
+ /**
+  * Implements hook_help().
+@@ -86,6 +89,10 @@ function config_translation_entity_type_alter(array &$entity_types) {
+         // Will be filled in dynamically, see \Drupal\field\Entity\FieldConfig::linkTemplates().
+         $entity_type->setLinkTemplate('config-translation-overview', $entity_type->getLinkTemplate('edit-form') . '/translate');
+       }
++      elseif ($entity_type->entityClassImplements(EntityDisplayInterface::class)) {
++        $class = ConfigTranslationEntityDisplayListBuilder::class;
++        // @todo Link template is not used but should be set so other logic can apply.
++      }
+       else {
+         $class = 'Drupal\config_translation\Controller\ConfigTranslationEntityListBuilder';
+       }
+@@ -118,6 +125,22 @@ function config_translation_config_translation_info(&$info) {
+           'base_entity_type' => $entity_type_id,
+           'weight' => 10,
+         ];
++        $info[$entity_type_id . '_form_display'] = [
++          'base_route_name' => "entity.entity_form_display.{$entity_type_id}.form_mode",
++          'entity_type' => 'entity_form_display',
++          'class' => EntityDisplayMapper::class,
++          'base_entity_type' => $entity_type_id,
++          'display_context' => 'form',
++          'weight' => 10,
++        ];
++        $info[$entity_type_id . '_view_display'] = [
++          'base_route_name' => "entity.entity_view_display.{$entity_type_id}.view_mode",
++          'entity_type' => 'entity_view_display',
++          'class' => EntityDisplayMapper::class,
++          'base_entity_type' => $entity_type_id,
++          'display_context' => 'view',
++          'weight' => 10,
++        ];
+       }
+     }
+   }
+@@ -150,6 +173,34 @@ function config_translation_config_translation_info(&$info) {
+   }
+ }
+ 
++/**
++ * Implements hook_local_tasks_alter().
++ */
++function config_translation_local_tasks_alter(&$local_tasks) {
++  if (\Drupal::moduleHandler()->moduleExists('field_ui')) {
++    // Move translate links to field_ui display edit forms.
++    foreach ($local_tasks as $id => &$task) {
++      if (!isset($task['config_translation_plugin_id'])
++        || !preg_match('/^entity\.entity_(view|form)_display\.config_translation_overview\.(.+)$/', $task['route_name'], $match)) {
++        continue;
++      }
++      list(, $display_context, $entity_type) = $match;
++      if ($display_context == 'view') {
++        $task['parent_id'] = "field_ui.fields:display_overview_{$entity_type}";
++      }
++      else {
++        $task['parent_id'] = "field_ui.fields:{$display_context}_display_overview_{$entity_type}";
++      }
++
++      // Add a task to the default display tab as well.
++      // @todo The path will conflict with view modes called "translate".
++      $tasks[$id . '.default'] = [
++        'base_route_name' => "entity.entity_view_display.{$entity_type}.default",
++      ] + $task;
++    }
++  }
++}
++
+ /**
+  * Implements hook_entity_operation().
+  */
+diff --git a/core/modules/config_translation/src/ConfigTranslation/EntityDisplayMapper.php b/core/modules/config_translation/src/ConfigTranslation/EntityDisplayMapper.php
+new file mode 100644
+index 0000000000..98d75c4557
+--- /dev/null
++++ b/core/modules/config_translation/src/ConfigTranslation/EntityDisplayMapper.php
+@@ -0,0 +1,112 @@
++<?php
++
++namespace Drupal\config_translation\ConfigTranslation;
++
++use Drupal\config_translation\ConfigEntityMapper;
++use Drupal\Core\Routing\RouteMatchInterface;
++
++/**
++ * Provides a configuration mapper for entity displays.
++ */
++class EntityDisplayMapper extends ConfigEntityMapper {
++
++  /**
++   * {@inheritdoc}
++   */
++  public function getBaseRouteParameters() {
++    $base_entity_info = $this->entityTypeManager
++      ->getDefinition($this->pluginDefinition['base_entity_type']);
++    $bundle_parameter_key = $base_entity_info
++      ->getBundleEntityType() ?: 'bundle';
++
++    $parameters = [];
++    $parameters[$bundle_parameter_key] = $this->entity->getTargetBundle();
++    $parameters[$this->pluginDefinition['display_context'] . '_mode_name'] = $this->entity->getMode();
++
++    return $parameters;
++  }
++
++  /**
++   * {@inheritdoc}
++   */
++  public function getOverviewRouteName() {
++    return "entity.{$this->entityType}.config_translation_overview.{$this->pluginDefinition['base_entity_type']}";
++  }
++
++  /**
++   * {@inheritdoc}
++   */
++  public function getTitle() {
++    $base_entity_info = $this->entityTypeManager
++      ->getDefinition($this->pluginDefinition['base_entity_type']);
++    $bundle = $base_entity_info->getLabel();
++    if ($bundle_type = $base_entity_info->getBundleEntityType()) {
++      $bundle = $this->entityTypeManager
++        ->getStorage($bundle_type)
++        ->load($this->entity->getTargetBundle())
++        ->label();
++    }
++
++    $mode = $this->entityTypeManager
++      ->getStorage("entity_{$this->pluginDefinition['display_context']}_mode")
++      ->load($this->pluginDefinition['base_entity_type'] . '.' . $this->entity->getMode());
++    $mode = $mode ? $mode->label() : $this->t('Default');
++
++    if ($this->entityType == 'entity_view_display') {
++      return $this->t('@bundle @mode display', [
++        '@bundle' => $bundle,
++        '@mode' => $mode,
++      ]);
++    }
++    elseif ($this->entityType == 'entity_form_display') {
++      return $this->t('@bundle @mode form display', [
++        '@bundle' => $bundle,
++        '@mode' => $mode,
++      ]);
++    }
++    parent::getTypeLabel();
++  }
++
++  /**
++   * {@inheritdoc}
++   */
++  public function getTypeLabel() {
++    $base_entity_info = $this->entityTypeManager
++      ->getDefinition($this->pluginDefinition['base_entity_type']);
++
++    if ($this->entityType == 'entity_view_display') {
++      return $this->t('@label view display', [
++        '@label' => $base_entity_info->getLabel(),
++      ]);
++    }
++    elseif ($this->entityType == 'entity_form_display') {
++      return $this->t('@label form display', [
++        '@label' => $base_entity_info->getLabel(),
++      ]);
++    }
++    parent::getTypeLabel();
++  }
++
++  /**
++   * {@inheritdoc}
++   */
++  public function populateFromRouteMatch(RouteMatchInterface $route_match) {
++    $bundle_entity_type = $this->entityTypeManager
++      ->getDefinition($this->pluginDefinition['base_entity_type'])
++      ->getBundleEntityType();
++    $bundle = $route_match->getParameter($bundle_entity_type ?: 'bundle') ?: $this->pluginDefinition['base_entity_type'];
++    $mode = $route_match->getParameter($this->pluginDefinition['display_context'] . '_mode_name') ?: 'default';
++
++    $entity = $this->entityTypeManager
++      ->getStorage($this->entityType)
++      ->load("{$this->pluginDefinition['base_entity_type']}.{$bundle}.{$mode}");
++
++    if ($entity) {
++      $route_match->getParameters()->set($this->entityType, $entity);
++
++      $this->setEntity($entity);
++      parent::populateFromRouteMatch($route_match);
++    }
++  }
++
++}
+diff --git a/core/modules/config_translation/src/Controller/ConfigTranslationEntityDisplayListBuilder.php b/core/modules/config_translation/src/Controller/ConfigTranslationEntityDisplayListBuilder.php
+new file mode 100644
+index 0000000000..77c74504c0
+--- /dev/null
++++ b/core/modules/config_translation/src/Controller/ConfigTranslationEntityDisplayListBuilder.php
+@@ -0,0 +1,108 @@
++<?php
++
++namespace Drupal\config_translation\Controller;
++
++use Drupal\config_translation\Controller\ConfigTranslationFieldListBuilder;
++use Drupal\Core\Entity\EntityInterface;
++use Drupal\Core\Entity\EntityTypeManagerInterface;
++use Drupal\Core\Entity\EntityStorageInterface;
++use Drupal\Core\Entity\EntityTypeInterface;
++use Drupal\Core\Url;
++
++/**
++ * Defines the config translation list builder for entity display entities.
++ */
++class ConfigTranslationEntityDisplayListBuilder extends ConfigTranslationFieldListBuilder {
++
++  /**
++   * Constructs a new ConfigTranslationEntityDisplayListBuilder object.
++   *
++   * @param \Drupal\Core\Entity\EntityTypeInterface $entity_type
++   *   The entity type definition.
++   * @param \Drupal\Core\Entity\EntityStorageInterface $storage
++   *   The entity storage class.
++   * @param \Drupal\Core\Entity\EntityTypeManagerInterface $entity_type_manager
++   *   The entity type manager.
++   */
++  public function __construct(EntityTypeInterface $entity_type, EntityStorageInterface $storage, EntityTypeManagerInterface $entity_type_manager) {
++    parent::__construct($entity_type, $storage, $entity_type_manager);
++    // @todo There must be a better way to get this information?
++    $this->displayContext = preg_replace('/^entity_(.+)_display$/', '\1', $this->entityType->id());
++  }
++
++  /**
++   * {@inheritdoc}
++   */
++  public function load() {
++    // It is not possible to use the standard load method, because this needs
++    // all display entities only for the given baseEntityType.
++    $ids = \Drupal::entityQuery($this->entityType->id())
++      ->condition('id', $this->baseEntityType . '.', 'STARTS_WITH')
++      ->execute();
++    return $this->storage->loadMultiple($ids);
++  }
++
++  /**
++   * {@inheritdoc}
++   */
++  public function getFilterLabels() {
++    $info = parent::getFilterLabels();
++    $bundle = $this->baseEntityInfo->getBundleLabel() ?: $this->t('Bundle');
++    $bundle = mb_strtolower($bundle);
++    $info['placeholder'] = $this->t('Enter mode or @bundle', [
++      '@bundle' => $bundle,
++    ]);
++    $info['description'] = $this->t('Enter a part of the mode or @bundle to filter by.', [
++      '@bundle' => $bundle,
++    ]);
++    return $info;
++  }
++
++  /**
++   * {@inheritdoc}
++   */
++  public function buildRow(EntityInterface $entity) {
++    $row = parent::buildRow($entity);
++    $row['label']['data'] = $entity->getMode() == 'default' ? $this->t('Default') : $this->entityManager
++      ->getStorage('entity_' . $this->displayContext . '_mode')
++      ->load($entity->getTargetEntityTypeId() . '.' . $entity->getMode())
++      ->label();
++    return $row;
++  }
++
++  /**
++   * {@inheritdoc}
++   */
++  public function buildHeader() {
++    $header = parent::buildHeader();
++    $header['label'] = $this->entityType->getLabel();
++    return $header;
++  }
++
++  /**
++   * {@inheritdoc}
++   */
++  public function getOperations(EntityInterface $entity) {
++    // Entity displays have no canonical no direct edit-form links so we
++    // hard-code the route to the translation operation.
++    // @todo Use config-translation-overview link template like field_ui does.
++    $route_parameters = [
++      $this->displayContext . '_mode_name' => $entity->getMode(),
++    ];
++
++    $bundle_type = $this->entityManager
++      ->getDefinition($entity->getTargetEntityTypeId())
++      ->getBundleEntityType();
++    if ($bundle_type) {
++      $route_parameters[$bundle_type] = $entity->getTargetBundle();
++    }
++
++    $operations['translate'] = [
++      'title' => $this->t('Translate'),
++      'url' => $this->ensureDestination(Url::fromRoute("entity.{$this->entityType->id()}.config_translation_overview.{$entity->getTargetEntityTypeId()}", $route_parameters)),
++    ];
++
++    return $operations;
++  }
++
++}
+diff --git a/core/modules/config_translation/tests/src/Functional/ConfigTranslationListUiTest.php b/core/modules/config_translation/tests/src/Functional/ConfigTranslationListUiTest.php
+index 7b1ca0ef86..e2201eb017 100644
+--- a/core/modules/config_translation/tests/src/Functional/ConfigTranslationListUiTest.php
++++ b/core/modules/config_translation/tests/src/Functional/ConfigTranslationListUiTest.php
+@@ -3,6 +3,7 @@
+ namespace Drupal\Tests\config_translation\Functional;
+ 
+ use Drupal\block_content\Entity\BlockContentType;
++use Drupal\Core\Entity\Entity\EntityFormDisplay;
+ use Drupal\field\Entity\FieldConfig;
+ use Drupal\field\Entity\FieldStorageConfig;
+ use Drupal\language\Entity\ConfigurableLanguage;
+@@ -39,6 +40,7 @@ class ConfigTranslationListUiTest extends BrowserTestBase {
+     'image',
+     'responsive_image',
+     'toolbar',
++    'taxonomy',
+   ];
+ 
+   /**
+@@ -506,4 +508,20 @@ public function testTranslateOperationInListUi() {
+     $this->doSettingsPageTest('admin/config/services/rss-publishing');
+   }
+ 
++  /**
++   * Asserts that missing default display does not break the form display page.
++   */
++  public function testDisplayTranslation() {
++    $this->drupalLogin($this->rootUser);
++    // Setup vocabulary.
++    Vocabulary::create([
++      'vid' => 'tags',
++      'name' => 'Tags',
++    ])->save();
++    // Assert there is no default form display.
++    $this->assertNull(EntityFormDisplay::load('taxonomy_term.tags.default'));
++    $this->drupalGet('admin/structure/taxonomy/manage/tags/overview/form-display');
++    $this->assertResponse(200);
++  }
++
+ }

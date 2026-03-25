@@ -1,0 +1,19 @@
+diff --git a/core/modules/views/src/Plugin/Block/ViewsExposedFilterBlock.php b/core/modules/views/src/Plugin/Block/ViewsExposedFilterBlock.php
+index d877277d72..6013c8c339 100644
+--- a/core/modules/views/src/Plugin/Block/ViewsExposedFilterBlock.php
++++ b/core/modules/views/src/Plugin/Block/ViewsExposedFilterBlock.php
+@@ -24,6 +24,14 @@ public function getCacheContexts() {
+     return Cache::mergeContexts(parent::getCacheContexts(), $contexts);
+   }
+ 
++  /**
++   * {@inheritdoc}
++   */
++  public function getCacheTags() {
++    $tags = $this->view->display_handler->getCacheMetadata()->getCacheTags();
++    return Cache::mergeTags(parent::getCacheTags(), $tags);
++  }
++
+   /**
+    * {@inheritdoc}
+    *

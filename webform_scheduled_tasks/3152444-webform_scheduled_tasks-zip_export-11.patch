@@ -1,0 +1,79 @@
+diff --git a/config/schema/webform_scheduled_tasks.schema.yml b/config/schema/webform_scheduled_tasks.schema.yml
+index bf81156..d86232c 100644
+--- a/config/schema/webform_scheduled_tasks.schema.yml
++++ b/config/schema/webform_scheduled_tasks.schema.yml
+@@ -57,3 +57,5 @@ webform_scheduled_task_type.export_email_results:
+       type: boolean
+     include_attachments:
+       type: boolean
++    archive_type:
++      type: string
+diff --git a/src/Plugin/WebformScheduledTasks/Task/EmailedExport.php b/src/Plugin/WebformScheduledTasks/Task/EmailedExport.php
+index ef0c666..dd9b0ee 100644
+--- a/src/Plugin/WebformScheduledTasks/Task/EmailedExport.php
++++ b/src/Plugin/WebformScheduledTasks/Task/EmailedExport.php
+@@ -14,6 +14,7 @@ use Drupal\file\Entity\File;
+ use Drupal\file\FileInterface;
+ use Drupal\file\FileUsage\FileUsageInterface;
+ use Drupal\webform\Entity\WebformSubmission;
++use Drupal\webform\Plugin\WebformExporterInterface;
+ use Drupal\webform\Plugin\WebformExporterManagerInterface;
+ use Drupal\webform\WebformSubmissionExporterInterface;
+ use Drupal\webform_scheduled_tasks\Exception\HaltScheduledTaskException;
+@@ -129,6 +130,7 @@ final class EmailedExport extends TaskPluginBase implements ContainerFactoryPlug
+       'storage_type' => static::STORAGE_TYPE_FILESYSTEM,
+       'delete_submissions' => FALSE,
+       'include_attachments' => TRUE,
++      'archive_type' => 'tar',
+     ];
+   }
+ 
+@@ -180,6 +182,31 @@ final class EmailedExport extends TaskPluginBase implements ContainerFactoryPlug
+       '#description' => $this->t('Include attachments uploaded by users in the exported archive.'),
+     ];
+ 
++    // Archive.
++    if (class_exists('\ZipArchive')) {
++      $form['archive_type'] = [
++        '#type' => 'select',
++        '#title' => $this->t('Archive file type'),
++        '#description' => $this->t('Select the archive file type for submission file uploads and generated documents.'),
++        '#default_value' => $this->configuration['archive_type'],
++        '#options' => [
++          WebformExporterInterface::ARCHIVE_TAR => $this->t('Tar archive (*.tar.gz)'),
++          WebformExporterInterface::ARCHIVE_ZIP => $this->t('ZIP file (*.zip)'),
++        ],
++        '#states' => [
++          'visible' => [
++            ':input[name="task_settings[include_attachments]"]' => ['checked' => TRUE],
++          ],
++        ],
++      ];
++    }
++    else {
++      $form['archive_type'] = [
++        '#type' => 'value',
++        '#value' => WebformExporterInterface::ARCHIVE_TAR,
++      ];
++    }
++
+     $this->buildExportPluginForm($form, $form_state);
+     return $form;
+   }
+@@ -254,7 +281,7 @@ final class EmailedExport extends TaskPluginBase implements ContainerFactoryPlug
+     // archiver throwing warnings, a big risk is silent failure. The current
+     // verification is a "best guess", given complexities around the number and
+     // size of various files which should be in the archive.
+-    if ($exporter->isArchive() && !$this->verifyArchive($this->getExportFileOrArchivePath($exporter))) {
++    if ($exporter->isArchive() && $this->configuration['archive_type'] != 'zip' && !$this->verifyArchive($this->getExportFileOrArchivePath($exporter))) {
+       throw new HaltScheduledTaskException('An invalid archive file was generated.');
+     }
+ 
+@@ -396,6 +423,7 @@ final class EmailedExport extends TaskPluginBase implements ContainerFactoryPlug
+     $this->exporter->setSourceEntity($this->getScheduledTask());
+     $exporter_options = $this->configuration['exporter_settings'] + [
+       'exporter' => $this->configuration['exporter'],
++      'archive_type' => $this->configuration['archive_type'],
+       'files' => $this->configuration['include_attachments'],
+     ];
+     $this->exporter->setExporter($exporter_options);

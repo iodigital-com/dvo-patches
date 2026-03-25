@@ -1,0 +1,167 @@
+diff --git a/src/Plugin/search_api/processor/ElasticsearchAttachments.php b/src/Plugin/search_api/processor/ElasticsearchAttachments.php
+index 8855d45..5295cf8 100644
+--- a/src/Plugin/search_api/processor/ElasticsearchAttachments.php
++++ b/src/Plugin/search_api/processor/ElasticsearchAttachments.php
+@@ -2,8 +2,10 @@
+ 
+ namespace Drupal\search_api_elasticsearch_attachments\Plugin\search_api\processor;
+ 
++use Drupal\Core\Entity\EntityInterface;
+ use Drupal\file\Entity\File;
+ use Drupal\search_api\Datasource\DatasourceInterface;
++use Drupal\search_api\IndexInterface;
+ use Drupal\search_api\Item\ItemInterface;
+ use Drupal\search_api\Processor\ProcessorPluginBase;
+ use Drupal\search_api\Processor\ProcessorProperty;
+@@ -60,6 +62,27 @@ class ElasticsearchAttachments extends ProcessorPluginBase implements PluginForm
+     'image',
+   ];
+ 
++  /**
++   * List of supported entity types.
++   *
++   * @var array
++   */
++  protected static $supportedEntityTypes = [
++    'node',
++    'media',
++    'paragraph',
++  ];
++
++  /**
++   * List of supported entity reference types.
++   *
++   * @var array
++   */
++  protected static $supportedEntityReferenceTypes = [
++    'entity_reference',
++    'entity_reference_revisions',
++  ];
++
+   /**
+    * The available boost factors.
+    *
+@@ -173,16 +196,40 @@ class ElasticsearchAttachments extends ProcessorPluginBase implements PluginForm
+    */
+   public function addFieldValues(ItemInterface $item) {
+     $entity_type = $item->getDatasource()->getEntityTypeId();
+-    if (in_array($entity_type, static::$supportedNodeFieldTypes)) {
+-      $this->indexFile($item, $item->getOriginalObject()->getValue());
++    $entity = $item->getOriginalObject()->getValue();
++    if ($entity_type === 'file') {
++      $this->indexFile($item, $entity);
+     }
+-    elseif ($entity_type == 'node') {
+-      $entity = $item->getOriginalObject()->getValue();
++    else {
++      $indexedItems = $this->prepareIndexedItems();
++      $fieldsToIndex = $this->getFieldsToIndex($item->getIndex());
++      $this->indexEntity($item, $entity, $fieldsToIndex, $indexedItems);
++    }
++  }
++
++  /**
++   * Index an entity.
++   *
++   * @param \Drupal\search_api\Item\ItemInterface $item
++   *   The item whose field values should be added.
++   * @param \Drupal\Core\Entity\EntityInterface $entity
++   *   The entity to index.
++   */
++  private function indexEntity(ItemInterface $item, EntityInterface $entity, array $fieldsToIndex, array &$indexedItems = []) {
++    if (in_array($entity->getEntityTypeId(), static::$supportedEntityTypes)
++      && !in_array($entity->id(), $indexedItems[$entity->getEntityTypeId()])) {
++      $indexedItems[$entity->getEntityTypeId()][] = $entity->id();
++
+       foreach ($entity->getFields() as $field) {
+         $data_definition = $field->getDataDefinition();
++        if (!in_array($data_definition->getName(), $fieldsToIndex)) {
++          continue;
++        }
++
+         if (get_class($data_definition) !== 'Drupal\field\Entity\FieldConfig') {
+           continue;
+         }
++
+         $storage = $data_definition->getFieldStorageDefinition();
+         // Check the field for type and process indexation.
+         if (
+@@ -194,31 +241,10 @@ class ElasticsearchAttachments extends ProcessorPluginBase implements PluginForm
+           }
+           continue;
+         }
+-        // Check the entity reference fields and extract attachments data.
+-        if ($storage instanceof FieldStorageConfigInterface && $storage->getType() !== 'entity_reference') {
+-          continue;
+-        }
+-        if (!isset($storage->getSettings()['target_type']) || $storage->getSettings()['target_type'] !== 'media') {
+-          continue;
+-        }
+ 
+-        if ($field->referencedEntities()) {
+-          foreach ($field->referencedEntities() as $field_value) {
+-            foreach ($field_value->getFields() as $child_field) {
+-              $data_definition = $child_field->getDataDefinition();
+-              if (get_class($data_definition) !== 'Drupal\field\Entity\FieldConfig') {
+-                continue;
+-              }
+-              $storage = $data_definition->getFieldStorageDefinition();
+-              if (
+-                in_array($storage->getType(), static::$supportedNodeFieldTypes)
+-                && !empty($files = $child_field->referencedEntities())
+-              ) {
+-                foreach ($files as $file) {
+-                  $this->indexFile($item, $file);
+-                }
+-              }
+-            }
++        if (isset($storage->getSettings()['target_type']) && in_array($storage->getType(), static::$supportedEntityReferenceTypes)) {
++          foreach ($field->referencedEntities() as $referencedEntity) {
++            $this->indexEntity($item, $referencedEntity, $fieldsToIndex, $indexedItems);
+           }
+         }
+       }
+@@ -531,4 +557,43 @@ class ElasticsearchAttachments extends ProcessorPluginBase implements PluginForm
+     return TRUE;
+   }
+ 
++  /**
++   * Prepare the indexed items array.
++   *
++   * Returns an array of (empty) arrays for the supported entity types,
++   * to prevent infinite recursion in $this->indexEntity().
++   *
++   * @return array
++   *   List of supported entity types.
++   */
++  private function prepareIndexedItems() {
++    $indexedItems = [];
++
++    foreach (self::$supportedEntityTypes as $supportedEntityType) {
++      $indexedItems[$supportedEntityType] = [];
++    }
++
++    return $indexedItems;
++  }
++
++  /**
++   * Get list of fields to index.
++   *
++   * @param \Drupal\search_api\IndexInterface $index
++   *   The index to get fields from.
++   *
++   * @return array
++   *   List of fields.
++   */
++  private function getFieldsToIndex(IndexInterface $index) {
++    $fields = [];
++    $fields = array_merge($fields, $index->getFieldsByDatasource(NULL));
++
++    foreach ($index->getDatasources() as $datasource_id => $datasource) {
++      $fields = array_merge($fields, $index->getFieldsByDatasource($datasource_id));
++    }
++
++    return array_keys($fields);
++  }
++
+ }

@@ -1,0 +1,38 @@
+diff --git a/config/install/field.storage.user.field_last_password_reset.yml b/config/install/field.storage.user.field_last_password_reset.yml
+index 7909183..e166e00 100644
+--- a/config/install/field.storage.user.field_last_password_reset.yml
++++ b/config/install/field.storage.user.field_last_password_reset.yml
+@@ -1,12 +1,12 @@
+ langcode: en
+ status: true
+ dependencies:
+-  module:
+-    - datetime
+-    - user
+   enforced:
+     module:
+       - password_policy
++  module:
++    - datetime
++    - user
+ id: user.field_last_password_reset
+ field_name: field_last_password_reset
+ entity_type: user
+diff --git a/config/install/field.storage.user.field_password_expiration.yml b/config/install/field.storage.user.field_password_expiration.yml
+index 8c4e684..b77637b 100644
+--- a/config/install/field.storage.user.field_password_expiration.yml
++++ b/config/install/field.storage.user.field_password_expiration.yml
+@@ -1,11 +1,11 @@
+ langcode: en
+ status: true
+ dependencies:
+-  module:
+-    - user
+   enforced:
+     module:
+       - password_policy
++  module:
++    - user
+ id: user.field_password_expiration
+ field_name: field_password_expiration
+ entity_type: user

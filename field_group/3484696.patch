@@ -1,0 +1,16 @@
+diff --git a/src/FieldGroupFormatterPluginManager.php b/src/FieldGroupFormatterPluginManager.php
+index 26a690c..30eb667 100644
+--- a/src/FieldGroupFormatterPluginManager.php
++++ b/src/FieldGroupFormatterPluginManager.php
+@@ -111,6 +111,11 @@ class FieldGroupFormatterPluginManager extends DefaultPluginManager {
+       'settings' => [],
+     ];
+ 
++    // Ensure 'settings' is an array before merging.
++    if (!is_array($configuration['settings'])) {
++      $configuration['settings'] = [];
++    }
++
+     // Fill in default settings values for the formatter.
+     $configuration['settings'] += $this->getDefaultSettings($format_type, $context);
+ 

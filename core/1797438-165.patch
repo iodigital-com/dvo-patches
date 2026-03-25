@@ -1,0 +1,26 @@
+diff --git a/core/includes/form.inc b/core/includes/form.inc
+index fe3230707e..2ac1a4fe9c 100644
+--- a/core/includes/form.inc
++++ b/core/includes/form.inc
+@@ -364,6 +364,8 @@ function template_preprocess_form(&$variables) {
+   if (empty($element['#attributes']['accept-charset'])) {
+     $element['#attributes']['accept-charset'] = "UTF-8";
+   }
++  // Disable client-side html5 validation, since it is not fully accessible.
++  $element['#attributes']['novalidate'] = TRUE;
+   $variables['attributes'] = $element['#attributes'];
+   $variables['children'] = $element['#children'];
+ }
+diff --git a/core/modules/layout_discovery/tests/src/Kernel/LayoutTest.php b/core/modules/layout_discovery/tests/src/Kernel/LayoutTest.php
+index 19d3431fc4..929c171c6d 100644
+--- a/core/modules/layout_discovery/tests/src/Kernel/LayoutTest.php
++++ b/core/modules/layout_discovery/tests/src/Kernel/LayoutTest.php
+@@ -66,7 +66,7 @@ public function testRenderLayout($layout_id, $config, $regions, array $html) {
+
+     // Add in the wrapping form elements and prefix/suffix.
+     array_unshift($html, 'Test prefix');
+-    array_unshift($html, '<form data-drupal-selector="the-form-id" action="/" method="post" id="the-form-id" accept-charset="UTF-8">');
++    array_unshift($html, '<form data-drupal-selector="the-form-id" action="/" method="post" id="the-form-id" accept-charset="UTF-8" novalidate="">');
+     // Retrieve the build ID from the rendered HTML since the string is random.
+     $build_id_input = $this->cssSelect('input[name="form_build_id"]')[0]->asXML();
+     $form_id_input = '<input data-drupal-selector="edit-the-form-id" type="hidden" name="form_id" value="the_form_id"/>';

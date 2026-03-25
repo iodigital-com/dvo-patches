@@ -1,0 +1,58 @@
+diff --git a/js/token.js b/js/token.js
+index 8dc6acf..c21c1dd 100644
+--- a/js/token.js
++++ b/js/token.js
+@@ -3,6 +3,19 @@
+ 
+   'use strict';
+ 
++  $(document).ready(function () {
++    if (Drupal.CKEditor5Instances) {
++      Drupal.CKEditor5Instances.forEach( (editor, id) => {
++        editor.editing.view.document.on('change:isFocused', (event, data, isFocused) => {
++          if (isFocused) {
++            drupalSettings.tokenFocusedCkeditor5 = editor;
++            drupalSettings.tokenFocusedField = null;
++          }
++        });
++      });
++    }
++  });
++
+   Drupal.behaviors.tokenTree = {
+     attach: function (context, settings) {
+       $(once('token-tree', 'table.token-tree', context)).treetable({ expandable: true});
+@@ -14,6 +27,7 @@
+       // Keep track of which textfield was last selected/focused.
+       $('textarea, input[type="text"]', context).focus(function () {
+         drupalSettings.tokenFocusedField = this;
++        drupalSettings.tokenFocusedCkeditor5 = null;
+       });
+ 
+       once('token-click-insert', '.token-click-insert .token-key', context).forEach(function (token) {
+@@ -50,6 +64,15 @@
+           else if (drupalSettings.tokenFocusedField) {
+             insertAtCursor(drupalSettings.tokenFocusedField, content);
+           }
++          else if (drupalSettings.tokenFocusedCkeditor5) {
++            const editor = drupalSettings.tokenFocusedCkeditor5;
++            editor.model.change((writer) => {
++              writer.insertText(
++                  content,
++                  editor.model.document.selection.getFirstPosition(),
++              );
++            })
++          }
+           else {
+             alert(Drupal.t('First click a text field to insert your tokens into.'));
+           }
+diff --git a/token.libraries.yml b/token.libraries.yml
+index c5e390a..24af0e9 100644
+--- a/token.libraries.yml
++++ b/token.libraries.yml
+@@ -24,4 +24,5 @@ token:
+     - core/jquery
+     - core/drupal
+     - core/once
++    - core/ckeditor5
+     - token/jquery.treeTable

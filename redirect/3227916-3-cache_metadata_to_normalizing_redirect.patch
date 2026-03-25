@@ -1,0 +1,54 @@
+diff --git a/src/EventSubscriber/RouteNormalizerRequestSubscriber.php b/src/EventSubscriber/RouteNormalizerRequestSubscriber.php
+index 274ba1e..f4be2dd 100644
+--- a/src/EventSubscriber/RouteNormalizerRequestSubscriber.php
++++ b/src/EventSubscriber/RouteNormalizerRequestSubscriber.php
+@@ -2,6 +2,8 @@
+ 
+ namespace Drupal\redirect\EventSubscriber;
+ 
++use Drupal\Core\Cache\CacheableMetadata;
++use Drupal\Core\Cache\CacheableResponseInterface;
+ use Drupal\Core\Config\ConfigFactoryInterface;
+ use Drupal\Core\Path\PathMatcherInterface;
+ use Drupal\Core\Routing\RequestHelper;
+@@ -126,12 +128,27 @@ class RouteNormalizerRequestSubscriber implements EventSubscriberInterface {
+       $redirect_uri = urldecode($redirect_uri);
+       if ($redirect_uri != $original_uri) {
+         $response = new TrustedRedirectResponse($redirect_uri, $this->config->get('default_status_code'));
++        $this->addCacheableMetadata($response);
+         $response->headers->set('X-Drupal-Route-Normalizer', 1);
+         $event->setResponse($response);
+       }
+     }
+   }
+ 
++  /**
++   * Adds cacheable data to the redirect response.
++   *
++   * @param \Drupal\Core\Cache\CacheableResponseInterface $response
++   *   The response that will receive the cache data.
++   */
++  protected function addCacheableMetadata(CacheableResponseInterface $response) {
++    if ($this->pathMatcher->isFrontPage()) {
++      $response->addCacheableDependency(
++        (new CacheableMetadata())->addCacheTags(['config:system.site'])
++      );
++    }
++  }
++
+   /**
+    * {@inheritdoc}
+    */
+diff --git a/tests/src/Unit/RouteNormalizerRequestSubscriberTest.php b/tests/src/Unit/RouteNormalizerRequestSubscriberTest.php
+index 69a6682..f01826b 100644
+--- a/tests/src/Unit/RouteNormalizerRequestSubscriberTest.php
++++ b/tests/src/Unit/RouteNormalizerRequestSubscriberTest.php
+@@ -165,7 +165,7 @@ class RouteNormalizerRequestSubscriberTest extends UnitTestCase {
+     $path_matcher = $this->getMockBuilder('\Drupal\Core\Path\PathMatcherInterface')
+       ->getMock();
+ 
+-    $expectation = $call_expected ? $this->once() : $this->never();
++    $expectation = $call_expected ? $this->atLeastOnce() : $this->never();
+ 
+     $path_matcher->expects($expectation)
+       ->method('isFrontPage')

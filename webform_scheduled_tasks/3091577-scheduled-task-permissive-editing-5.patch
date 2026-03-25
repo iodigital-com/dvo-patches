@@ -1,0 +1,109 @@
+diff --git a/src/Entity/WebformScheduledTask.php b/src/Entity/WebformScheduledTask.php
+index 060ebbb..4fafa82 100644
+--- a/src/Entity/WebformScheduledTask.php
++++ b/src/Entity/WebformScheduledTask.php
+@@ -21,7 +21,7 @@ use Drupal\webform\Entity\Webform;
+  *     plural = "@count scheduled tasks",
+  *   ),
+  *   handlers = {
+- *     "access" = "\Drupal\Core\Entity\EntityAccessControlHandler",
++ *     "access" = "\Drupal\webform_scheduled_tasks\ScheduledTaskAccessControlHandler",
+  *     "list_builder" = "\Drupal\webform_scheduled_tasks\WebformScheduledTaskListBuilder",
+  *     "form" = {
+  *       "add" = "\Drupal\webform_scheduled_tasks\Form\WebformScheduledTaskForm",
+@@ -41,7 +41,7 @@ use Drupal\webform\Entity\Webform;
+  *   links = {
+  *     "add-form" = "/admin/structure/webform/manage/{webform}/scheduled-tasks/add",
+  *     "edit-form" = "/admin/structure/webform/manage/{webform}/scheduled-tasks/{webform_scheduled_task}/edit",
+- *     "delete-form" = "/admin/structure/webform/manage/scheduled-tasks/{webform_scheduled_task}/delete",
++ *     "delete-form" = "/admin/structure/webform/manage/{webform}/scheduled-tasks/{webform_scheduled_task}/delete",
+  *     "collection" = "/admin/structure/webform/manage/{webform}/scheduled-tasks",
+  *   },
+  *   config_export = {
+diff --git a/src/ScheduledTaskAccessControlHandler.php b/src/ScheduledTaskAccessControlHandler.php
+new file mode 100644
+index 0000000..5661bba
+--- /dev/null
++++ b/src/ScheduledTaskAccessControlHandler.php
+@@ -0,0 +1,41 @@
++<?php
++
++namespace Drupal\webform_scheduled_tasks;
++
++use Drupal\Core\Entity\EntityAccessControlHandler;
++use Drupal\Core\Entity\EntityInterface;
++use Drupal\Core\Session\AccountInterface;
++
++/**
++ * Defines the access control handler for the webform scheduled task entity.
++ */
++class ScheduledTaskAccessControlHandler extends EntityAccessControlHandler {
++
++  /**
++   * {@inheritdoc}
++   */
++  protected function checkAccess(EntityInterface $entity, $operation, AccountInterface $account) {
++    /** @var \Drupal\webform_scheduled_tasks\Entity\WebformScheduledTaskInterface $entity */
++    $result = parent::checkAccess($entity, $operation, $account);
++    // If the user has access to edit the webform, they can also operate on its
++    // scheduled tasks.
++    $result = $result->orIf($entity->getWebform()->access('update', $account, TRUE));
++    return $result;
++  }
++
++  /**
++   * {@inheritdoc}
++   */
++  protected function checkCreateAccess(AccountInterface $account, array $context, $entity_bundle = NULL) {
++    $result = parent::checkCreateAccess($account, $context, $entity_bundle);
++    $webform = $context['webform'] ?? \Drupal::routeMatch()->getParameter('webform');
++    /** @var \Drupal\webform\WebformInterface $webform */
++    if ($webform) {
++      // If the user has access to edit the webform, they can also operate on its
++      // scheduled tasks.
++      $result = $result->orIf($webform->access('update', $account, TRUE));
++    }
++    return $result;
++  }
++
++}
+diff --git a/src/ScheduledTaskRouteProvider.php b/src/ScheduledTaskRouteProvider.php
+index caa16b3..8846fe8 100644
+--- a/src/ScheduledTaskRouteProvider.php
++++ b/src/ScheduledTaskRouteProvider.php
+@@ -25,6 +25,22 @@ class ScheduledTaskRouteProvider extends AdminHtmlRouteProvider {
+     return $this->upcastWebformParam(parent::getEditFormRoute($entity_type));
+   }
+ 
++  /**
++   * {@inheritdoc}
++   */
++  protected function getCollectionRoute(EntityTypeInterface $entity_type) {
++    $route = parent::getCollectionRoute($entity_type);
++
++    // Switch the permission requirement to a webform.update entity access
++    // check (which includes checking for the 'administer webforms' permission.
++    $requirements = $route->getRequirements();
++    unset($requirements['_permission']);
++    $requirements['_entity_access'] = 'webform.update';
++    $route->setRequirements($requirements);
++
++    return $this->upcastWebformParam($route);
++  }
++
+   /**
+    * Upcast a 'webform' route param.
+    */
+diff --git a/src/WebformScheduledTaskListBuilder.php b/src/WebformScheduledTaskListBuilder.php
+index f3a1b61..c52137e 100644
+--- a/src/WebformScheduledTaskListBuilder.php
++++ b/src/WebformScheduledTaskListBuilder.php
+@@ -90,7 +90,7 @@ final class WebformScheduledTaskListBuilder extends ConfigEntityListBuilder {
+   protected function getEntityIds() {
+     $associated_webform = $this->routeMatch->getParameter('webform');
+     $query = $this->getStorage()->getQuery()
+-      ->condition('webform', $associated_webform, '=')
++      ->condition('webform', $associated_webform->id(), '=')
+       ->sort($this->entityType->getKey('id'))
+       ->accessCheck();
+     return $query->execute();

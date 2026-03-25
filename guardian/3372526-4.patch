@@ -1,0 +1,30 @@
+From 0ba8b9e1610c49b7e6488c2a0fd0c7a997701ad0 Mon Sep 17 00:00:00 2001
+From: Rico Van de Vin <14095-finlet@users.noreply.drupalcode.org>
+Date: Wed, 5 Jul 2023 12:01:03 +0000
+Subject: [PATCH] Do not check for changed email if initial email is not yet
+ set.
+
+---
+ src/GuardianManager.php | 6 ++++++
+ 1 file changed, 6 insertions(+)
+
+diff --git a/src/GuardianManager.php b/src/GuardianManager.php
+index 2410f07..b44a81b 100644
+--- a/src/GuardianManager.php
++++ b/src/GuardianManager.php
+@@ -235,6 +235,12 @@ final class GuardianManager implements GuardianManagerInterface {
+     $user = $this->userStorage->load($account->id());
+ 
+     if ($user && is_null($user->getPassword())) {
++      // If no initial email is set, we are probably still installing Drupal.
++      // There is no need to guard the user yet.
++      if (empty($user->getInitialEmail())) {
++        return TRUE;
++      }
++
+       if ($user->getEmail() == $user->getInitialEmail()) {
+         $guarded_users = $this->getGuardedUsers();
+ 
+-- 
+GitLab
+

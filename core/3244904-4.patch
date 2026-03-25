@@ -1,0 +1,21 @@
+diff --git a/core/modules/menu_ui/src/Plugin/Validation/Constraint/MenuSettingsConstraintValidator.php b/core/modules/menu_ui/src/Plugin/Validation/Constraint/MenuSettingsConstraintValidator.php
+index 3fa8f2695c..d0dc785493 100644
+--- a/core/modules/menu_ui/src/Plugin/Validation/Constraint/MenuSettingsConstraintValidator.php
++++ b/core/modules/menu_ui/src/Plugin/Validation/Constraint/MenuSettingsConstraintValidator.php
+@@ -40,13 +40,14 @@ public function validate($entity, Constraint $constraint) {
+       // Handle all the other non-revisionable menu link changes in a pending
+       // revision.
+       elseif ($defaults['entity_id']) {
+-        if ($defaults['entity_id'] && ($values['menu_name'] != $defaults['menu_name'])) {
++        $moderation_state = $entity->get('moderation_state')->getString();
++        if ($defaults['entity_id'] && ($values['menu_name'] != $defaults['menu_name']) && $moderation_state != 'published') {
+           $this->context->buildViolation($constraint->messageParent)
+             ->atPath('menu.menu_parent')
+             ->setInvalidValue($entity)
+             ->addViolation();
+         }
+-        elseif (isset($values['parent']) && ($values['parent'] != $defaults['parent'])) {
++        elseif (isset($values['parent']) && ($values['parent'] != $defaults['parent']) && $moderation_state != 'published') {
+           $this->context->buildViolation($constraint->messageParent)
+             ->atPath('menu.menu_parent')
+             ->setInvalidValue($entity)

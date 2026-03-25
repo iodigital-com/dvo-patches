@@ -1,0 +1,79 @@
+diff --git a/file_encrypt.post_update.php b/file_encrypt.post_update.php
+new file mode 100644
+index 0000000..ecb2a57
+--- /dev/null
++++ b/file_encrypt.post_update.php
+@@ -0,0 +1,13 @@
++<?php
++
++/**
++ * @file
++ * Post update functions for File encrypt module.
++ */
++
++/**
++ * Clear cache due to new file_encrypt.route_subscriber service.
++ */
++function file_encrypt_post_update_route_subscriber_service() {
++  // Empty post-update function.
++}
+diff --git a/file_encrypt.services.yml b/file_encrypt.services.yml
+index 59eb51d..f6f0259 100644
+--- a/file_encrypt.services.yml
++++ b/file_encrypt.services.yml
+@@ -1,4 +1,9 @@
+ services:
++  file_encrypt.route_subscriber:
++    class: Drupal\file_encrypt\Routing\RouteSubscriber
++    arguments: ['@module_handler']
++    tags:
++      - { name: event_subscriber }
+   stream_wrapper.encrypt:
+     class: \Drupal\file_encrypt\EncryptStreamWrapper
+     tags:
+diff --git a/src/Routing/RouteSubscriber.php b/src/Routing/RouteSubscriber.php
+new file mode 100644
+index 0000000..d692472
+--- /dev/null
++++ b/src/Routing/RouteSubscriber.php
+@@ -0,0 +1,40 @@
++<?php
++
++namespace Drupal\file_encrypt\Routing;
++
++use Drupal\Core\Extension\ModuleHandlerInterface;
++use Drupal\Core\Routing\RouteSubscriberBase;
++use Symfony\Component\Routing\RouteCollection;
++
++/**
++ * Modify file_encrypt routes to support redirect.
++ */
++class RouteSubscriber extends RouteSubscriberBase {
++
++  /**
++   * The module handler service.
++   *
++   * @var \Drupal\Core\Extension\ModuleHandlerInterface
++   */
++  protected $moduleHandler;
++
++  /**
++   * Constructs a new RouteSubscriber object.
++   *
++   * @var \Drupal\Core\Extension\ModuleHandlerInterface $module_handler
++   *   The module handler service.
++   */
++  public function __construct(ModuleHandlerInterface $module_handler) {
++    $this->moduleHandler = $module_handler;
++  }
++
++  /**
++   * {@inheritdoc}
++   */
++  protected function alterRoutes(RouteCollection $collection) {
++    if ($this->moduleHandler->moduleExists('redirect') && $route = $collection->get('file_encrypt.file_download')) {
++      $route->setDefault('_disable_route_normalizer', TRUE);
++    }
++  }
++
++}

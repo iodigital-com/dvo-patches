@@ -1,0 +1,61 @@
+diff --git a/matomo.module b/matomo.module
+index c4590d8..f78d727 100644
+--- a/matomo.module
++++ b/matomo.module
+@@ -334,14 +334,8 @@ function matomo_page_attachments(array &$page) {
+       $script .= $codesnippet_after;
+     }
+ 
+-    $script .= 'var d=document,';
+-    $script .= 'g=d.createElement("script"),';
+-    $script .= 's=d.getElementsByTagName("script")[0];';
+-    $script .= 'g.type="text/javascript";';
+-    $script .= 'g.defer=true;';
+-    $script .= 'g.async=true;';
+-
+     // Should a local cached copy of the tracking code be used?
++    $script_src = ($url_https ?: $url_http) . 'matomo.js';
+     if ($config->get('cache')) {
+       $url = \_matomo_cache($url_http . 'matomo.js');
+       if ($url) {
+@@ -351,24 +345,34 @@ function matomo_page_attachments(array &$page) {
+         // URL changed.
+         $query_string = '?' . (\Drupal::state()->get('system.css_js_query_string') ?: '0');
+ 
+-        $script .= 'g.src="' . $url . $query_string . '";';
++        $script_src = $url . $query_string;
+       }
+     }
+-    else {
+-      $script .= 'g.src=u+"matomo.js";';
+-    }
+ 
+-    $script .= 's.parentNode.insertBefore(g,s);';
+     $script .= '})();';
+ 
+     // Add tracker code.
+     $page['#attached']['html_head'][] = [
+       [
+         '#tag' => 'script',
+-        '#value' => new MatomoJavaScriptSnippet($script),
++        '#attributes' => [
++          'src' => $script_src,
++          'type' => 'text/javascript',
++          'defer' => TRUE,
++          'async' => TRUE,
++        ],
++        '#weight' => -100,
+       ],
+       'matomo_tracking_script',
+     ];
++    $page['#attached']['html_head'][] = [
++      [
++        '#tag' => 'script',
++        '#value' => new MatomoJavaScriptSnippet($script),
++        '#weight' => -99,
++      ],
++      'matomo_tracking_script_extras',
++    ];
+   }
+ }
+ 

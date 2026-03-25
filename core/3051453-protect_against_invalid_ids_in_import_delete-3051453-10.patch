@@ -1,0 +1,36 @@
+diff --git a/core/lib/Drupal/Core/Config/ConfigImporter.php b/core/lib/Drupal/Core/Config/ConfigImporter.php
+index 25b7d0afbb..7fb102d724 100644
+--- a/core/lib/Drupal/Core/Config/ConfigImporter.php
++++ b/core/lib/Drupal/Core/Config/ConfigImporter.php
+@@ -880,9 +880,10 @@ protected function checkOp($collection, $op, $name) {
+           if ($entity_type_id = $this->configManager->getEntityTypeIdByName($name)) {
+             $entity_storage = $this->configManager->getEntityTypeManager()->getStorage($entity_type_id);
+             $entity_type = $this->configManager->getEntityTypeManager()->getDefinition($entity_type_id);
+-            $entity = $entity_storage->load($entity_storage->getIDFromConfigName($name, $entity_type->getConfigPrefix()));
+-            $entity->delete();
+-            $this->logError($this->t('Deleted and replaced configuration entity "@name"', ['@name' => $name]));
++            if ($entity = $entity_storage->load($entity_storage->getIDFromConfigName($name, $entity_type->getConfigPrefix()))) {
++              $entity->delete();
++              $this->logError($this->t('Deleted and replaced configuration entity "@name"', ['@name' => $name]));
++            }
+           }
+           else {
+             $this->storageComparer->getTargetStorage($collection)->delete($name);
+diff --git a/core/lib/Drupal/Core/Config/Entity/ConfigEntityStorage.php b/core/lib/Drupal/Core/Config/Entity/ConfigEntityStorage.php
+index b944eea9f9..737b31fe8f 100644
+--- a/core/lib/Drupal/Core/Config/Entity/ConfigEntityStorage.php
++++ b/core/lib/Drupal/Core/Config/Entity/ConfigEntityStorage.php
+@@ -385,9 +385,10 @@ public function importUpdate($name, Config $new_config, Config $old_config) {
+    */
+   public function importDelete($name, Config $new_config, Config $old_config) {
+     $id = static::getIDFromConfigName($name, $this->entityType->getConfigPrefix());
+-    $entity = $this->load($id);
+-    $entity->setSyncing(TRUE);
+-    $entity->delete();
++    if ($entity = $this->load($id)) {
++      $entity->setSyncing(TRUE);
++      $entity->delete();
++    }
+     return TRUE;
+   }
+ 

@@ -1,0 +1,31 @@
+diff --git a/modules/simple_sitemap_views/config/schema/simple_sitemap_views.views.schema.yml b/modules/simple_sitemap_views/config/schema/simple_sitemap_views.views.schema.yml
+index 10c9e59..0cd6fc4 100644
+--- a/modules/simple_sitemap_views/config/schema/simple_sitemap_views.views.schema.yml
++++ b/modules/simple_sitemap_views/config/schema/simple_sitemap_views.views.schema.yml
+@@ -6,6 +6,26 @@ views.display_extender.simple_sitemap_display_extender:
+       label: 'Variants'
+       sequence:
+         type: simple_sitemap_views_variant_settings
++    index:
++      label: 'Index'
++      type: boolean
++    variant:
++      type: string
++      label: 'Variant'
++    priority:
++      label: 'Priority'
++      type: string
++    changefreq:
++      label: 'Change frequency'
++      type: string
++    arguments:
++      label: 'Indexed arguments'
++      type: sequence
++      sequence:
++        type: string
++    max_links:
++      label: 'Max links'
++      type: integer
+ 
+ simple_sitemap_views_variant_settings:
+   type: mapping

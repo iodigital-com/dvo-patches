@@ -1,0 +1,21 @@
+diff --git a/config/schema/cookies.config.schema.yml b/config/schema/cookies.config.schema.yml
+index 7fa18d1..15c4026 100644
+--- a/config/schema/cookies.config.schema.yml
++++ b/config/schema/cookies.config.schema.yml
+@@ -56,3 +56,16 @@ cookies.config:
+     store_auth_user_consent:
+       type: boolean
+       label: 'Stores the user consent'
++
++block.settings.cookies_docs_block:
++  type: block_settings
++  mapping:
++    show_cookies_settings_button:
++      type: sequence
++      label: 'Show COOKiES settings button'
++      sequence:
++        type: string
++        label: 'Position'
++        enum:
++          - above
++          - below

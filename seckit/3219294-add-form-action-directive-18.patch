@@ -1,0 +1,87 @@
+diff --git a/config/install/seckit.settings.yml b/config/install/seckit.settings.yml
+index a059577..538d0ec 100644
+--- a/config/install/seckit.settings.yml
++++ b/config/install/seckit.settings.yml
+@@ -11,6 +11,7 @@ seckit_xss:
+     style-src: ''
+     img-src: ''
+     media-src: ''
++    form-action: ''
+     frame-src: ''
+     frame-ancestors: ''
+     child-src: ''
+diff --git a/config/schema/seckit.schema.yml b/config/schema/seckit.schema.yml
+index d0ef25b..bcae022 100644
+--- a/config/schema/seckit.schema.yml
++++ b/config/schema/seckit.schema.yml
+@@ -44,6 +44,9 @@ seckit.settings:
+             media-src:
+               type: string
+               label: 'Media src'
++            form-action:
++              type: string
++              label: 'Form action'
+             frame-src:
+               type: string
+               label: 'Frame src'
+diff --git a/js/seckit.listener.js b/js/seckit.listener.js
+index 550a26c..ba259f7 100644
+--- a/js/seckit.listener.js
++++ b/js/seckit.listener.js
+@@ -97,6 +97,7 @@ function _seckit_csp_remove_attributes(context) {
+     $('#edit-seckit-xss-csp-style-src', context).removeAttr('disabled');
+     $('#edit-seckit-xss-csp-img-src', context).removeAttr('disabled');
+     $('#edit-seckit-xss-csp-media-src', context).removeAttr('disabled');
++    $('#edit-seckit-xss-csp-form-action', context).removeAttr('disabled');
+     $('#edit-seckit-xss-csp-frame-src', context).removeAttr('disabled');
+     $('#edit-seckit-xss-csp-frame-ancestors', context).removeAttr('disabled');
+     $('#edit-seckit-xss-csp-child-src', context).removeAttr('disabled');
+@@ -117,6 +118,7 @@ function _seckit_csp_add_attributes(context) {
+     $('#edit-seckit-xss-csp-style-src', context).attr('disabled', 'disabled');
+     $('#edit-seckit-xss-csp-img-src', context).attr('disabled', 'disabled');
+     $('#edit-seckit-xss-csp-media-src', context).attr('disabled', 'disabled');
++    $('#edit-seckit-xss-csp-form-action', context).attr('disabled', 'disabled');
+     $('#edit-seckit-xss-csp-frame-src', context).attr('disabled', 'disabled');
+     $('#edit-seckit-xss-csp-frame-ancestors', context).attr('disabled', 'disabled');
+     $('#edit-seckit-xss-csp-child-src', context).attr('disabled', 'disabled');
+diff --git a/src/EventSubscriber/SecKitEventSubscriber.php b/src/EventSubscriber/SecKitEventSubscriber.php
+index 3e49af6..383a28a 100644
+--- a/src/EventSubscriber/SecKitEventSubscriber.php
++++ b/src/EventSubscriber/SecKitEventSubscriber.php
+@@ -205,6 +205,7 @@ class SecKitEventSubscriber implements EventSubscriberInterface {
+     $csp_img_src = $this->config->get('seckit_xss.csp.img-src');
+     $csp_media_src = $this->config->get('seckit_xss.csp.media-src');
+     $csp_style_src = $this->config->get('seckit_xss.csp.style-src');
++    $csp_form_action = $this->config->get('seckit_xss.csp.form-action');
+     $csp_frame_src = $this->config->get('seckit_xss.csp.frame-src');
+     $csp_frame_ancestors = $this->config->get('seckit_xss.csp.frame-ancestors');
+     $csp_child_src = $this->config->get('seckit_xss.csp.child-src');
+@@ -240,6 +241,9 @@ class SecKitEventSubscriber implements EventSubscriberInterface {
+     if ($csp_media_src) {
+       $directives[] = "media-src $csp_media_src";
+     }
++    if ($csp_form_action) {
++      $directives[] = "form-action $csp_form_action";
++    }
+     if ($csp_frame_src) {
+       $directives[] = "frame-src $csp_frame_src";
+     }
+diff --git a/src/Form/SecKitSettingsForm.php b/src/Form/SecKitSettingsForm.php
+index 23deebb..82e9bfb 100644
+--- a/src/Form/SecKitSettingsForm.php
++++ b/src/Form/SecKitSettingsForm.php
+@@ -246,6 +246,14 @@ class SecKitSettingsForm extends ConfigFormBase {
+       '#title' => 'media-src',
+       '#description' => $this->t('Specify trustworthy sources for &lt;audio&gt; and &lt;video&gt; elements.'),
+     ];
++    // CSP form-action directive.
++    $form['seckit_xss']['csp']['form-action'] = [
++      '#type' => 'textfield',
++      '#maxlength' => 1024,
++      '#default_value' => $config->get('seckit_xss.csp.form-action'),
++      '#title' => 'form-action',
++      '#description' => $this->t('Specify trustworthy sources for &lt;form&gt; action attribute. <a href="https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Content-Security-Policy/form-action" target="_blank">MDN form-action documentation.</a>'),
++    ];
+     // CSP frame-src directive.
+     $form['seckit_xss']['csp']['frame-src'] = [
+       '#type' => 'textarea',

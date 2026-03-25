@@ -1,0 +1,71 @@
+diff --git a/core/modules/locale/config/install/locale.settings.yml b/core/modules/locale/config/install/locale.settings.yml
+index a6cd4f30439d0cb2d8eec6b3baa3dfb90023f7b9..3cfd42e3cb225f45593a67810040a198f115b239 100644
+--- a/core/modules/locale/config/install/locale.settings.yml
++++ b/core/modules/locale/config/install/locale.settings.yml
+@@ -1,4 +1,5 @@
+ cache_strings: true
++update_default_config_langcodes: true
+ translate_english: false
+ javascript:
+   directory: languages
+diff --git a/core/modules/locale/config/schema/locale.schema.yml b/core/modules/locale/config/schema/locale.schema.yml
+index 7321f60113f06c31c4fbc2793de75b21c265d2fc..bf30c5428b885073aec851e887c59230f47fec39 100644
+--- a/core/modules/locale/config/schema/locale.schema.yml
++++ b/core/modules/locale/config/schema/locale.schema.yml
+@@ -7,6 +7,9 @@ locale.settings:
+     cache_strings:
+       type: boolean
+       label: 'Cache strings'
++    update_default_config_langcodes:
++      type: boolean
++      label: 'Update default configuration langcodes when new modules or themes are installed.'
+     translate_english:
+       type: boolean
+       label: 'Enable English translation'
+diff --git a/core/modules/locale/locale.module b/core/modules/locale/locale.module
+index 88fbdfe04d5b4266aee34a92db106c35d7d18f11..44eb705d80a05cc23c6059aee19c0060773e8852 100644
+--- a/core/modules/locale/locale.module
++++ b/core/modules/locale/locale.module
+@@ -366,7 +366,12 @@ function locale_cron() {
+  * Updates default configuration when new modules or themes are installed.
+  */
+ function locale_system_set_config_langcodes() {
+-  \Drupal::service('locale.config_manager')->updateDefaultConfigLangcodes();
++  // Read update_default_config_langcodes from locale settings, fallback to the
++  // default value (TRUE) if it's not overridden.
++  $update_default_config_langcodes = \Drupal::config('locale.settings')->get('update_default_config_langcodes') ?? TRUE;
++  if ($update_default_config_langcodes) {
++    \Drupal::service('locale.config_manager')->updateDefaultConfigLangcodes();
++  }
+ }
+ 
+ /**
+@@ -410,7 +415,10 @@ function locale_system_update(array $components) {
+     // components. Do this even if import is not enabled because parsing new
+     // configuration may expose new source strings.
+     $module_handler->loadInclude('locale', 'inc', 'locale.bulk');
+-    if ($batch = locale_config_batch_update_components([], [], [], TRUE)) {
++    // Read update_default_config_langcodes from locale settings, fallback to
++    // the default value (TRUE) if it's not overridden.
++    $update_default_config_langcodes = \Drupal::config('locale.settings')->get('update_default_config_langcodes') ?? TRUE;
++    if ($batch = locale_config_batch_update_components([], [], [], $update_default_config_langcodes)) {
+       batch_set($batch);
+     }
+   }
+diff --git a/core/modules/locale/src/Form/LocaleSettingsForm.php b/core/modules/locale/src/Form/LocaleSettingsForm.php
+index be6bbfb2489dbeeb828dfa0c5f8390798a0e62fe..a9d12add7349a6a337da235b642dd97e66db0b7f 100644
+--- a/core/modules/locale/src/Form/LocaleSettingsForm.php
++++ b/core/modules/locale/src/Form/LocaleSettingsForm.php
+@@ -33,6 +33,12 @@ protected function getEditableConfigNames() {
+    */
+   public function buildForm(array $form, FormStateInterface $form_state) {
+     $config = $this->config('locale.settings');
++    $form['update_default_config_langcodes'] = [
++      '#type' => 'checkbox',
++      '#title' => $this->t('Update default configuration when new modules or themes are installed.'),
++      '#config_target' => 'locale.settings:update_default_config_langcodes',
++      '#description' => $this->t("With this setting enabled, configuration langcodes will be updated to site's default language when installing new modules or themes. If this behavior is not desired in your setup (i.e., langcodes need to be in a different language then the site's default one), disable it."),
++    ];
+ 
+     $form['update_interval_days'] = [
+       '#type' => 'radios',

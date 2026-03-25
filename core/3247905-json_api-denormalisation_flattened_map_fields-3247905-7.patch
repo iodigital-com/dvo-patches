@@ -1,0 +1,132 @@
+diff --git a/core/modules/jsonapi/src/Normalizer/FieldItemNormalizer.php b/core/modules/jsonapi/src/Normalizer/FieldItemNormalizer.php
+index 3fb60bff11..a984bbe51b 100644
+--- a/core/modules/jsonapi/src/Normalizer/FieldItemNormalizer.php
++++ b/core/modules/jsonapi/src/Normalizer/FieldItemNormalizer.php
+@@ -73,9 +73,7 @@ public function normalize($field_item, $format = NULL, array $context = []) {
+       foreach ($field_properties as $property_name => $property) {
+         $values[$property_name] = $this->serializer->normalize($property, $format, $context);
+       }
+-      // Flatten if there is only a single property to normalize.
+-      $flatten = count($field_properties) === 1 && $field_item::mainPropertyName() !== NULL;
+-      $values = static::rasterizeValueRecursive($flatten ? reset($values) : $values);
++      $values = $this->rasterizeAndFlattenValues($values, $field_properties, $field_item);
+     }
+     else {
+       $values = $field_item->getValue();
+@@ -88,6 +86,15 @@ public function normalize($field_item, $format = NULL, array $context = []) {
+     return $normalization;
+   }
+ 
++  /**
++   * Rasterise and flatten values if needed.
++   */
++  protected function rasterizeAndFlattenValues($values, $field_properties, FieldItemInterface $field_item) {
++    // Flatten if there is only a single property to normalize.
++    $flatten = count($field_properties) === 1 && $field_item::mainPropertyName() !== NULL;
++    return static::rasterizeValueRecursive($flatten ? reset($values) : $values);
++  }
++
+   /**
+    * {@inheritdoc}
+    */
+@@ -134,6 +141,7 @@ public function denormalize($data, $class, $format = NULL, array $context = [])
+         return !$data_definition->isReadOnly();
+       }));
+       $invalid_property_names = [];
++      $data = $this->unflattenValues($data, $property_definitions);
+       foreach ($data as $property_name => $property_value) {
+         if (!isset($property_definitions[$property_name])) {
+           $alt = static::getAlternatives($property_name, $writable_properties);
+@@ -182,6 +190,20 @@ public function denormalize($data, $class, $format = NULL, array $context = [])
+     return $data_internal;
+   }
+ 
++  /**
++   * Unflatten values if needed.
++   *
++   * Necessary for fields flattened by ::rasterizeAndFlattenValues().
++   */
++  protected function unflattenValues($data, $property_definitions) {
++    $is_single_property = count($property_definitions) === 1;
++    $first_property_name = key($property_definitions);
++    if ($is_single_property && !isset($data[$first_property_name])) {
++      $data = [$first_property_name => $data];
++    }
++    return $data;
++  }
++
+   /**
+    * Provides alternatives for a given array and key.
+    *
+diff --git a/core/modules/jsonapi/tests/src/Kernel/Normalizer/FieldItemNormalizerTest.php b/core/modules/jsonapi/tests/src/Kernel/Normalizer/FieldItemNormalizerTest.php
+index cb40e712b5..dbb10de934 100644
+--- a/core/modules/jsonapi/tests/src/Kernel/Normalizer/FieldItemNormalizerTest.php
++++ b/core/modules/jsonapi/tests/src/Kernel/Normalizer/FieldItemNormalizerTest.php
+@@ -26,6 +26,7 @@ class FieldItemNormalizerTest extends JsonapiKernelTestBase {
+     'link',
+     'entity_test',
+     'serialization',
++    'field_test',
+   ];
+ 
+   /**
+@@ -35,6 +36,13 @@ class FieldItemNormalizerTest extends JsonapiKernelTestBase {
+    */
+   private $normalizer;
+ 
++  /**
++   * The JSON:API resource type repository.
++   *
++   * @var \Drupal\jsonapi\ResourceType\ResourceTypeRepositoryInterface
++   */
++  protected $resourceTypeRepository;
++
+   /**
+    * {@inheritdoc}
+    */
+@@ -43,11 +51,13 @@ protected function setUp(): void {
+     $etm = $this->container->get('entity_type.manager');
+     $this->normalizer = new FieldItemNormalizer($etm);
+     $this->normalizer->setSerializer($this->container->get('jsonapi.serializer'));
++    $this->resourceTypeRepository = $this->container->get('jsonapi.resource_type.repository');
+ 
+     $definitions = [];
+     $definitions['links'] = BaseFieldDefinition::create('link')->setLabel('Links');
+     $definitions['internal_property_value'] = BaseFieldDefinition::create('single_internal_property_test')->setLabel('Internal property');
+     $definitions['no_main_property_value'] = BaseFieldDefinition::create('map')->setLabel('No main property');
++    $definitions['test_object_field'] = BaseFieldDefinition::create('test_object_field')->setLabel('Object field');
+     $this->container->get('state')->set('entity_test.additional_base_field_definitions', $definitions);
+     $etm->clearCachedDefinitions();
+   }
+@@ -126,4 +136,31 @@ public function testNormalizeFieldItem(): void {
+     ], $result->getNormalization());
+   }
+ 
++  /**
++   * Tests normalizing field item.
++   */
++  public function testDenormalisationSerializedFieldItem(): void {
++    $entity = EntityTest::create([
++      'name' => 'Test entity',
++      'test_object_field' => [
++        [
++          'value' => ['somekey' => 'some value'],
++        ],
++      ],
++    ]);
++
++    $result = $this->normalizer->normalize($entity->get('test_object_field')->first());
++    assert($result instanceof CacheableNormalization);
++    $this->assertEquals($entity->test_object_field->value, $result->getNormalization());
++
++    $class = get_class($entity->get('test_object_field')->first());
++    $resource_type = $this->resourceTypeRepository->get($entity->getEntityTypeId(), $entity->bundle());
++    $context = [
++      'field_definition' => $entity->get('test_object_field')->getFieldDefinition(),
++      'resource_type' => $resource_type,
++    ];
++    $result = $this->normalizer->denormalize($result->getNormalization(), $class, NULL, $context);
++    $this->assertEquals($entity->test_object_field->value, $result['value']);
++  }
++
+ }

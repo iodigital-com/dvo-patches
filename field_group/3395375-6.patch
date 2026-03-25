@@ -1,0 +1,13 @@
+diff --git a/formatters/tabs/horizontal-tabs.js b/formatters/tabs/horizontal-tabs.js
+index 0c37bc7..74111d0 100644
+--- a/formatters/tabs/horizontal-tabs.js
++++ b/formatters/tabs/horizontal-tabs.js
+@@ -67,7 +67,7 @@
+                     .trim();
+                 } else {
+                   summary =
+-                    summaryElement.clone().html().trim() ||
++                    summaryElement.clone().children().remove().end().html().trim() ||
+                     summaryElement.find('> span:first-child').html().trim();
+                 }
+

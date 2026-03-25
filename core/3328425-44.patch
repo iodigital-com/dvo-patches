@@ -1,0 +1,41 @@
+diff --git a/core/modules/ckeditor5/ckeditor5.module b/core/modules/ckeditor5/ckeditor5.module
+index 561795fa95..bb4a9abdc3 100644
+--- a/core/modules/ckeditor5/ckeditor5.module
++++ b/core/modules/ckeditor5/ckeditor5.module
+@@ -428,8 +428,6 @@ function ckeditor5_library_info_alter(&$libraries, $extension) {
+   }
+
+   if ($extension === 'core') {
+-    // CSS rule to resolve the conflict with z-index between CKEditor 5 and jQuery UI.
+-    $libraries['drupal.dialog']['css']['component']['modules/ckeditor5/css/ckeditor5.dialog.fix.css'] = [];
+     // Fix the CKEditor 5 focus management in dialogs. Modify the library
+     // declaration to ensure this file is always loaded after
+     // drupal.dialog.jquery-ui.js.
+diff --git a/core/modules/ckeditor5/css/ckeditor5.dialog.fix.css b/core/modules/ckeditor5/css/ckeditor5.dialog.fix.css
+deleted file mode 100644
+index da2837934a..0000000000
+--- a/core/modules/ckeditor5/css/ckeditor5.dialog.fix.css
++++ /dev/null
+@@ -1,3 +0,0 @@
+-.ui-dialog ~ .ck-body-wrapper {
+-  --ck-z-panel: 1261;
+-}
+diff --git a/core/modules/ckeditor5/css/editor.css b/core/modules/ckeditor5/css/editor.css
+index bbc9a31b50..481c073d04 100644
+--- a/core/modules/ckeditor5/css/editor.css
++++ b/core/modules/ckeditor5/css/editor.css
+@@ -9,6 +9,14 @@
+   fill-opacity: 1 !important;
+ }
+
++/**
++ * Adjust default z-index of "balloon" popups (such as the hyperlink dialog)
++ * to ensure it appears over jQuery UI modals.
++ */
++.ck-body-wrapper {
++  --ck-z-panel: calc(var(--jui-dialog-z-index) + 999);
++}
++
+ .ck-editor__main > :is(.ck-editor__editable, .ck-source-editing-area) {
+   /* Set the min-height equal to configuration value for the number of rows.
+    * The `--ck-min-height` value is set on the parent `.ck-editor` element by

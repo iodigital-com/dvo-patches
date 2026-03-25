@@ -1,0 +1,268 @@
+diff --git a/src/Plugin/search_api/backend/SearchApiElasticsearchBackend.php b/src/Plugin/search_api/backend/SearchApiElasticsearchBackend.php
+index 50732ba..78b9bd5 100644
+--- a/src/Plugin/search_api/backend/SearchApiElasticsearchBackend.php
++++ b/src/Plugin/search_api/backend/SearchApiElasticsearchBackend.php
+@@ -8,6 +8,7 @@ use Drupal\Core\Extension\ModuleHandlerInterface;
+ use Drupal\Core\Form\FormBuilderInterface;
+ use Drupal\Core\Form\FormStateInterface;
+ use Drupal\Core\Link;
++use Drupal\Core\Plugin\PluginFormInterface;
+ use Drupal\Core\Url;
+ use Drupal\elasticsearch_connector\ClusterManager;
+ use Drupal\elasticsearch_connector\ElasticSearch\ClientManagerInterface;
+@@ -15,6 +16,9 @@ use Drupal\elasticsearch_connector\ElasticSearch\Parameters\Factory\IndexFactory
+ use Drupal\elasticsearch_connector\ElasticSearch\Parameters\Factory\SearchFactory;
+ use Drupal\search_api\Backend\BackendPluginBase;
+ use Drupal\search_api\IndexInterface;
++use Drupal\search_api\Plugin\PluginFormTrait;
++use Drupal\search_api\Query\Condition;
++use Drupal\search_api\Query\ConditionGroup;
+ use Drupal\search_api\Query\QueryInterface;
+ use Drupal\search_api\Query\ResultSet;
+ use Drupal\search_api\Query\ResultSetInterface;
+@@ -27,8 +31,6 @@ use nodespark\DESConnector\Elasticsearch\Aggregations\Bucket\Terms;
+ use nodespark\DESConnector\Elasticsearch\Aggregations\Metrics\Stats;
+ use Psr\Log\LoggerInterface;
+ use Symfony\Component\DependencyInjection\ContainerInterface;
+-use Drupal\Core\Plugin\PluginFormInterface;
+-use Drupal\search_api\Plugin\PluginFormTrait;
+ 
+ /**
+  * Elasticsearch Search API Backend definition.
+@@ -729,36 +731,65 @@ class SearchApiElasticsearchBackend extends BackendPluginBase implements PluginF
+     // Create an empty array that will be attached to the result object.
+     $attach = [];
+ 
++    // Query conditions.
++    $conditions = &$query->getConditionGroup()->getConditions();
++
+     foreach ($facets as $key => $facet) {
+       $terms = [];
+ 
+       // Handle 'and' operator.
+-      if ($facet['operator'] == 'and' || ($facet['operator'] == 'or' && !isset($response['aggregations'][$key . '_global']))) {
++      if ($facet['operator'] == 'and' || $facet['operator'] == 'or') {
+         if (!empty($facet['type']) && $facet['type'] == 'stats') {
+           $terms = $response['aggregations'][$key];
+         }
+         else {
+-          $buckets = $response['aggregations'][$key]['buckets'];
+-          array_walk($buckets, function ($value) use (&$terms) {
+-            $terms[] = [
+-              'count' => $value['doc_count'],
+-              'filter' => '"' . $value['key'] . '"',
+-            ];
+-          });
+-        }
+-      }
+-      elseif ($facet['operator'] == 'or') {
+-        if (!empty($facet['type']) && $facet['type'] == 'stats') {
+-          $terms = $response['aggregations'][$key . '_global'];
+-        }
+-        else {
+-          $buckets = $response['aggregations'][$key . '_global'][$key]['buckets'];
+-          array_walk($buckets, function ($value) use (&$terms) {
+-            $terms[] = [
+-              'count' => $value['doc_count'],
+-              'filter' => '"' . $value['key'] . '"',
+-            ];
+-          });
++          // When the operator is "or":
++          // - For a facet with one of the elements checked, the results of
++          // this facet are equal to those of the query without
++          // the filter of the latter.
++          // - For facets with none of the elements checked, the results are
++          // those of the existing aggregation.
++          $position = $this->inArrayRecursive($key, $conditions);
++          $aggregation = $position !== FALSE
++            // Generate query without facet filter and get the bucket result
++            // for this facet.
++            ? $this->getFacetResult($query, $position, $key)
++            // Or use the existing aggregation.
++            : $response['aggregations'][$key];
++
++          if (!empty($facet['type']) && $facet['type'] == 'stats') {
++            $terms = $aggregation;
++          }
++          else {
++            $buckets = $aggregation['buckets'];
++            // If facet results should be visible even when they are not included
++            // in the query results, we use the global buckets to add the items missing
++            // from our buckets, with doc_count = 0.
++            if ($facet['min_count'] < 1) {
++              $global_buckets = $response['aggregations'][$key . '_global'][$key]['buckets'];
++              $facet_values = [];
++              foreach ($buckets as $bucket) {
++                $facet_values[$bucket['key']] = $bucket['doc_count'];
++              }
++              array_walk($global_buckets, function ($value) use (&$terms, $facet, $facet_values) {
++                $terms[] = [
++                  'count' => $facet_values[$value['key']] ?? 0,
++                  'filter' => '"' . $value['key'] . '"',
++                ];
++              });
++            }
++            else {
++              array_walk($buckets, function ($value) use (&$terms, $facet) {
++                if ($value['doc_count'] >= $facet['min_count']) {
++                  $terms[] = [
++                    'count' => $value['doc_count'],
++                    'filter' => '"' . $value['key'] . '"',
++                  ];
++                }
++              });
++            }
++          }
++
+         }
+       }
+       $attach[$key] = $terms;
+@@ -776,16 +807,16 @@ class SearchApiElasticsearchBackend extends BackendPluginBase implements PluginF
+   /**
+    * Parse the date values.
+    *
+-   * It's necessary to build the facets. It convert epoch milliseconds format
++   * It's necessary to build the facets. It converts epoch milliseconds format
+    * to seconds.
+-   * Return all data terms converted in seconds.
++   * Return all data terms converted to seconds.
+    *
+    * @param array $index_fields
+    *   Index fields.
+    * @param string $field_name
+    *   Field name.
+    * @param array $terms
+-   *   Array terms contains all results from Elasticsearch.
++   *   Array terms contain all results from Elasticsearch.
+    */
+   protected function parseDateFacets(array $index_fields, $field_name, array &$terms) {
+     $field_type = $index_fields[$field_name]->getType();
+@@ -798,6 +829,128 @@ class SearchApiElasticsearchBackend extends BackendPluginBase implements PluginF
+     }
+   }
+ 
++  /**
++   * Find $needle position.
++   *
++   * This function returns the position of the needle in the $haystack,
++   * when $haystack is multi-dimensional array.
++   *
++   * @param string $needle
++   *   The string to find.
++   * @param array $haystack
++   *   Multi-dimensional array.
++   * @param null|int $parent_key
++   *   The condition number.
++   *
++   * @return int|bool
++   *   Return the condition number of $needle if it is found or false.
++   */
++  protected function inArrayRecursive($needle, array $haystack, $parent_key = NULL) {
++    $found = FALSE;
++    foreach ($haystack as $key => $item) {
++      if ($parent_key == NULL) {
++        $parent_key = $key;
++      }
++      if ($item === $needle) {
++        $found = $parent_key;
++        break;
++      }
++      elseif (is_array($item)) {
++        $found = $this->inArrayRecursive($needle, $item, $parent_key);
++        if ($found !== FALSE) {
++          break;
++        }
++      }
++      elseif (is_object($item) && $item instanceof ConditionGroup) {
++        $found = $this->inArrayRecursive($needle, $item->getConditions(), $parent_key);
++        if ($found !==   FALSE) {
++          break;
++        }
++        else {
++          $parent_key = NULL;
++        }
++      }
++      elseif (is_object($item) && $item instanceof Condition) {
++        if ($item->getField() == $needle) {
++          $found = $parent_key;
++          break;
++        }
++      }
++    }
++    return $found;
++  }
++
++  /**
++   * Generate a new query to recover the facet result.
++   *
++   * @param \Drupal\search_api\Query\QueryInterface $query
++   *   Search API query object.
++   * @param int $position
++   *   The position of facet filter to delete of the conditions.
++   * @param string $facet_name
++   *   The name of the facet which we need result.
++   *
++   * @return array
++   *   The facet result.
++   */
++  protected function getFacetResult(QueryInterface $query, int $position, string $facet_name) {
++    $facet_query = unserialize(serialize($query));
++    /** @var \Drupal\search_api\Query\QueryInterface $facet_query */
++
++    // Query conditions.
++    $conditions = &$facet_query->getConditionGroup()->getConditions();
++   unset($conditions[$position]);
++
++    // Get index.
++    $index = $facet_query->getIndex();
++    $params = $this->indexFactory->index($index);
++
++    // Check Elasticsearch index.
++    if (!$this->client->indices()->exists($params)) {
++      return [];
++    }
++
++    // Add the facets to the request.
++    if ($facet_query->getOption('search_api_facets')) {
++      $this->addFacets($facet_query);
++    }
++
++    // Build Elasticsearch query.
++    $params = SearchFactory::search($facet_query);
++
++    // Note that this requires fielddata option to be enabled.
++    // @see ::getAutocompleteSuggestions()
++    // @see \Drupal\elasticsearch_connector\ElasticSearch\Parameters\Factory\IndexFactory::mapping()
++    if ($incomplete_key = $facet_query->getOption('autocomplete')) {
++      // Autocomplete suggestions are determined using a term aggregation (like
++      // facets), but filtered to only include facets with the right prefix.
++      // As the search facet field is analyzed, facets are tokenized terms and
++      // all in lower case. To match that, we need convert the our filter to
++      // lower case also.
++      $incomplete_key = strtolower($incomplete_key);
++      // Note that we cannot use the elasticsearch client aggregations API as
++      // it does not support the "include" parameter.
++      $params['body']['aggs']['autocomplete']['terms'] = [
++        'field' => $facet_query->getOption('autocomplete_field'),
++        'include' => $incomplete_key . '.*',
++      ];
++    }
++
++    try {
++      // Allow modules to alter the Elasticsearch query.
++      $this->preQuery($facet_query);
++
++      // Do search.
++      $response = $this->client->search($params)->getRawResponse();
++
++      return $response['aggregations'][$facet_name];
++    }
++    catch (\Exception $e) {
++      watchdog_exception('Elasticsearch API', $e);
++      return [];
++    }
++  }
++
+   /**
+    * Prefixes an index ID as configured.
+    *

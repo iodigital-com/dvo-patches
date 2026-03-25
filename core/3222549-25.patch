@@ -1,0 +1,13 @@
+diff --git a/core/tests/Drupal/Tests/UiHelperTrait.php b/core/tests/Drupal/Tests/UiHelperTrait.php
+index f2f29efd17e..b138cabe178 100644
+--- a/core/tests/Drupal/Tests/UiHelperTrait.php
++++ b/core/tests/Drupal/Tests/UiHelperTrait.php
+@@ -174,7 +174,7 @@ protected function drupalLogin(AccountInterface $account) {
+       $this->submitForm([
+         'name' => $account->getAccountName(),
+         'pass' => $account->passRaw,
+-      ], 'Log in');
++      ], t('Log in')->render());
+     }
+ 
+     // @see ::drupalUserIsLoggedIn()

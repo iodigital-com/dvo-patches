@@ -1,0 +1,144 @@
+From 50904436a2e46ca2724a2977f6113efb48f5c799 Mon Sep 17 00:00:00 2001
+From: Ralph van den Houdt <ralphvdhoudt@1210930.no-reply.drupal.org>
+Date: Tue, 30 Sep 2025 14:56:14 -0400
+Subject: [PATCH] Issue #3129963: Index options not available in search_api
+ settings
+
+---
+ .../schema/elasticsearch_connector.schema.yml |  9 +++
+ elasticsearch_connector.module                | 61 +++++++++++++++++++
+ .../Parameters/Factory/IndexFactory.php       |  6 +-
+ .../backend/SearchApiElasticsearchBackend.php |  4 +-
+ 4 files changed, 77 insertions(+), 3 deletions(-)
+ create mode 100644 config/schema/elasticsearch_connector.schema.yml
+
+diff --git a/config/schema/elasticsearch_connector.schema.yml b/config/schema/elasticsearch_connector.schema.yml
+new file mode 100644
+index 00000000..e5d27123
+--- /dev/null
++++ b/config/schema/elasticsearch_connector.schema.yml
+@@ -0,0 +1,9 @@
++search_api.index.third_party_settings.elasticsearch_index:
++  type: mapping
++  mapping:
++    number_of_shards:
++      type: integer
++    number_of_replicas:
++      type: integer
++    codec:
++      type: string
+diff --git a/elasticsearch_connector.module b/elasticsearch_connector.module
+index fd6378a3..f8b7257f 100644
+--- a/elasticsearch_connector.module
++++ b/elasticsearch_connector.module
+@@ -5,6 +5,7 @@
+  * Provides hook implementations and functions accessible from other modules.
+  */
+ 
++use Drupal\Core\Form\FormStateInterface;
+ use Drupal\Core\Routing\RouteMatchInterface;
+ use Elasticsearch\Client;
+ 
+@@ -570,3 +571,63 @@ function elasticsearch_connector_site_hash() {
+ function elasticsearch_connector_search_api_field_type_mapping_alter(array &$mapping) {
+   $mapping['object'] = 'object';
+ }
++
++/**
++ * Implements hook_form_FORM_ID_alter().
++ */
++function elasticsearch_connector_form_search_api_index_edit_form_alter(&$form, FormStateInterface $form_state) {
++  $index = $form_state->getFormObject()->getEntity();
++  $settings = $index->getThirdPartySettings('elasticsearch_index');
++  $form['third_party_settings']['elasticsearch_index'] = [
++    '#tree' => TRUE,
++    '#type' => 'details',
++    '#title' => t('Elasticsearch specific index options'),
++    '#collapsed' => FALSE,
++  ];
++  $form['third_party_settings']['elasticsearch_index']['number_of_shards'] = [
++    '#type' => 'number',
++    '#title' => t('Number of shards'),
++    '#required' => TRUE,
++    '#min' => 1,
++    '#step' => 1,
++    '#default_value' => $settings['number_of_shards'] ?? 5,
++    '#description' => t('Enter the number of shards for the index.'),
++    '#weight' => 3,
++  ];
++  $form['third_party_settings']['elasticsearch_index']['number_of_replicas'] = [
++    '#type' => 'number',
++    '#title' => t('Number of replica'),
++    '#required' => FALSE,
++    '#min' => 0,
++    '#step' => 1,
++    '#default_value' => $settings['number_of_replicas'] ?? 1,
++    '#description' => t('Enter the number of shards replicas.'),
++    '#weight' => 4,
++  ];
++  $form['third_party_settings']['elasticsearch_index']['codec'] = [
++    '#type' => 'select',
++    '#title' => t('Codec'),
++    '#required' => FALSE,
++    '#default_value' => $settings['codec'] ?? 'LZ4',
++    '#description' => t('Select compression for stored data. Defaults to: LZ4.'),
++    '#options' => [
++      'default' => 'LZ4',
++      'best_compression' => 'DEFLATE',
++    ],
++    '#weight' => 5,
++  ];
++}
++
++/**
++ * Implements hook_config_schema_info_alter().
++ */
++function elasticsearch_connector_config_schema_info_alter(&$definitions) {
++
++  $definitions['search_api.index.*']['mapping']['third_party_settings'] = [
++    'type' => 'sequence',
++    'label' => 'Third party settings',
++    'sequence' => [
++      'type' => 'search_api.index.third_party_settings.[%key]',
++    ],
++  ];
++}
+diff --git a/src/ElasticSearch/Parameters/Factory/IndexFactory.php b/src/ElasticSearch/Parameters/Factory/IndexFactory.php
+index f2704c3e..61d47e31 100644
+--- a/src/ElasticSearch/Parameters/Factory/IndexFactory.php
++++ b/src/ElasticSearch/Parameters/Factory/IndexFactory.php
+@@ -54,12 +54,14 @@ class IndexFactory {
+    */
+   public static function create(IndexInterface $index) {
+     $indexName = static::getIndexName($index);
++    $settings = $index->getThirdPartySettings('elasticsearch_index');
+     $indexConfig = [
+       'index' => $indexName,
+       'body' => [
+         'settings' => [
+-          'number_of_shards' => $index->getOption('number_of_shards', 5),
+-          'number_of_replicas' => $index->getOption('number_of_replicas', 1),
++          'number_of_shards' => $settings['number_of_shards'] ?? 5,
++          'number_of_replicas' => $settings['number_of_replicas'] ?? 1,
++          'codec' => $settings['codec'] ?? 'LZ4',
+         ],
+       ],
+     ];
+diff --git a/src/Plugin/search_api/backend/SearchApiElasticsearchBackend.php b/src/Plugin/search_api/backend/SearchApiElasticsearchBackend.php
+index e153a4ec..25431feb 100644
+--- a/src/Plugin/search_api/backend/SearchApiElasticsearchBackend.php
++++ b/src/Plugin/search_api/backend/SearchApiElasticsearchBackend.php
+@@ -492,7 +492,9 @@ class SearchApiElasticsearchBackend extends BackendPluginBase implements PluginF
+     if (empty($items)) {
+       return [];
+     }
+-
++    if (!$this->client->indices()->exists($this->indexFactory->index($index))) {
++      $this->addIndex($index);
++    }
+     try {
+       $response = $this->client->bulk(
+         $this->indexFactory->bulkIndex($index, $items)
+-- 
+GitLab
+

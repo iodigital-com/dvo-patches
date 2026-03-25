@@ -1,0 +1,44 @@
+diff --git a/src/Controller/UploadController.php b/src/Controller/UploadController.php
+index 81503b0a2813ad0d4551bf5ea9b4bc2208811cc9..b0bcb61eeb2efaf6a138141d20a0b2b725307463 100644
+--- a/src/Controller/UploadController.php
++++ b/src/Controller/UploadController.php
+@@ -113,7 +113,7 @@ class UploadController extends ControllerBase {
+       }
+ 
+       // Prepare the file_resup_temporary private directory.
+-      $directory = "$scheme://" . FILE_RESUP_TEMPORARY;
++      $directory = 'temporary://' . FILE_RESUP_TEMPORARY;
+       if (!$this->fileSystem->prepareDirectory($directory, FileSystemInterface::CREATE_DIRECTORY)) {
+         throw new DirectoryNotReadyException("Can't create file_resup's temporary directory.");
+       }
+diff --git a/src/Form/FileFormAlterBase.php b/src/Form/FileFormAlterBase.php
+index c1f1c660ada9b8fc911cff55ab82195d993a06c8..79f933e2a9f4c59dc6ea4787cf9998e4b838d41f 100644
+--- a/src/Form/FileFormAlterBase.php
++++ b/src/Form/FileFormAlterBase.php
+@@ -131,7 +131,7 @@ abstract class FileFormAlterBase {
+   }
+ 
+   public static function getUploadUri(FileResup $upload) {
+-    return $upload->scheme->value . '://' . FILE_RESUP_TEMPORARY . '/' . $upload->upload_id->value;
++    return 'temporary://' . FILE_RESUP_TEMPORARY . '/' . $upload->upload_id->value;
+   }
+ 
+   /**
+@@ -246,7 +246,7 @@ abstract class FileFormAlterBase {
+     // file_exists to not detect a new file because of the metadata cache. Let's open the directory to invalidate the cache.
+     //
+     // @see https://stackoverflow.com/questions/41723458/php-file-exists-or-is-file-does-not-answer-correctly-for-10-20s-on-nfs-files-ec
+-    $handle = opendir($upload->scheme->value . '://' . FILE_RESUP_TEMPORARY);
++    $handle = opendir('temporary://' . FILE_RESUP_TEMPORARY);
+     closedir($handle);
+ 
+     // Ensure the uploaded file is present.
+@@ -334,7 +334,7 @@ abstract class FileFormAlterBase {
+ 
+     // Move the uploaded file.
+     $file->setFileUri($destination);
+-    if (!rename($upload_uri, $file->uri->value)) {
++    if (!$file_system->move($upload_uri, $file->uri->value)) {
+       $form_state->setErrorByName($form_field_name, t('File upload error. Could not move uploaded file.'));
+       $logger->error(t('Upload error. Could not move uploaded file %file to destination %destination.', array('%file' => $file->filename->value, '%destination' => $file->uri->value)));
+       return FALSE;

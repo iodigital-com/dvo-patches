@@ -1,0 +1,69 @@
+diff --git a/src/Query/Query.php b/src/Query/Query.php
+--- a/src/Query/Query.php
++++ b/src/Query/Query.php
+@@ -464,6 +464,31 @@ public function sort($field, $order = self::SORT_ASC) {
+     return $this;
+   }
+
++  /**
++   * {@inheritdoc}
++   */
++  public function scriptSort($script, $order = self::SORT_ASC, $param = [], $type = 'number', $lang = 'painless') {
++    $order = strtoupper(trim($order));
++    $order = $order == self::SORT_DESC ? self::SORT_DESC : self::SORT_ASC;
++
++    // Only one sort script can be assigned for a given search. Prefer the
++    // first one.
++    if (!isset($this->sorts['_script'])) {
++      $script = [
++        'script' => [
++        'lang' => $lang,
++          'inline' => $script,
++          'params' => $param,
++        ],
++        'type' => $type,
++        'order' => strtolower($order),
++      ];
++
++      $this->sorts['_script'] = $script;
++    }
++    return $this;
++  }
++
+   /**
+    * {@inheritdoc}
+    */
+diff --git a/src/Query/QueryInterface.php b/src/Query/QueryInterface.php
+--- a/src/Query/QueryInterface.php
++++ b/src/Query/QueryInterface.php
+@@ -215,6 +215,30 @@ public function setFulltextFields(array $fields = NULL);
+    */
+   public function sort($field, $order = self::SORT_ASC);
+
++  /**
++   * Adds a sort directive to this search query.
++   *
++   * If no sort is manually set, the results will be sorted descending by
++   * relevance.
++   *
++   * @param string $script
++   *   The actual string value of the script that should be used for sorting.
++   * @param string $order
++   *   The order to sort items in – one of the SORT_* constants.
++   * @param array $param
++   *  An associative array of parameters for the script.
++   * @param string $type
++   *  The type parameter for defining this script to the search server.
++   * @param string $lang
++   *  The language that the script is written in.
++   *
++   * @return $this
++   *
++   * @see \Drupal\search_api\Query\QueryInterface::SORT_ASC
++   * @see \Drupal\search_api\Query\QueryInterface::SORT_DESC
++   */
++  public function scriptSort($script, $order = self::SORT_ASC, $param = [], $type = 'number', $lang = 'painless');
++
+   /**
+    * Adds a range of results to return.
+    *

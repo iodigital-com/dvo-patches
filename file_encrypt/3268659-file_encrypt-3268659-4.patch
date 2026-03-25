@@ -1,0 +1,36 @@
+diff --git a/src/StreamFilter/DecryptStreamFilter.php b/src/StreamFilter/DecryptStreamFilter.php
+index 88de7ce..6d659cf 100644
+--- a/src/StreamFilter/DecryptStreamFilter.php
++++ b/src/StreamFilter/DecryptStreamFilter.php
+@@ -42,6 +42,7 @@ class DecryptStreamFilter extends StreamFilterBase {
+    *
+    * @see EncryptStreamFilter::filterData()
+    */
++  #[\ReturnTypeWillChange]
+   public function filter($in, $out, &$consumed, $closing): int {
+     while ($bucket = stream_bucket_make_writeable($in)) {
+ 
+diff --git a/src/StreamFilter/EncryptStreamFilter.php b/src/StreamFilter/EncryptStreamFilter.php
+index 0c5aad0..856e073 100644
+--- a/src/StreamFilter/EncryptStreamFilter.php
++++ b/src/StreamFilter/EncryptStreamFilter.php
+@@ -17,6 +17,7 @@ class EncryptStreamFilter extends StreamFilterBase {
+   /**
+    * {@inheritdoc}
+    */
++  #[\ReturnTypeWillChange]
+   public function filter($in, $out, &$consumed, $closing): int {
+     while ($bucket = stream_bucket_make_writeable($in)) {
+       try {
+diff --git a/src/StreamFilter/StreamFilterBase.php b/src/StreamFilter/StreamFilterBase.php
+index a898b20..b937a39 100644
+--- a/src/StreamFilter/StreamFilterBase.php
++++ b/src/StreamFilter/StreamFilterBase.php
+@@ -39,6 +39,7 @@ abstract class StreamFilterBase extends \php_user_filter {
+   /**
+    * {@inheritdoc}
+    */
++  #[\ReturnTypeWillChange]
+   public function onCreate(): bool {
+     $required_params = [
+       'encryption_service' => EncryptServiceInterface::class,

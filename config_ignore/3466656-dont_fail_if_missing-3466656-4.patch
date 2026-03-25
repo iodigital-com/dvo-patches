@@ -1,0 +1,13 @@
+diff --git a/src/EventSubscriber/ConfigIgnoreEventSubscriber.php b/src/EventSubscriber/ConfigIgnoreEventSubscriber.php
+index e4efd15..eac8d3a 100644
+--- a/src/EventSubscriber/ConfigIgnoreEventSubscriber.php
++++ b/src/EventSubscriber/ConfigIgnoreEventSubscriber.php
+@@ -181,7 +181,7 @@ class ConfigIgnoreEventSubscriber implements EventSubscriberInterface, CacheTags
+         }
+ 
+         $destination_data = $destination_storage->read($config_name);
+-        if ($ignored === TRUE) {
++        if ($ignored === TRUE && !empty($destination_data)) {
+           // Ignored means the transformation is set to the destination.
+           $transformation_storage->write($config_name, $destination_data);
+           continue;

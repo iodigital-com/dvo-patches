@@ -1,0 +1,42 @@
+diff --git a/entity_type_behaviors.module b/entity_type_behaviors.module
+index 023fd38..18ed9bd 100644
+--- a/entity_type_behaviors.module
++++ b/entity_type_behaviors.module
+@@ -37,37 +37,6 @@ function entity_type_behaviors_form_alter(&$form, FormStateInterface $form_state
+     ->processForm($form, $form_state, $form_id);
+ }
+ 
+-/**
+- * Implements hook_entity_type_alter().
+- */
+-function entity_type_behaviors_entity_type_alter(array &$entity_types) {
+-  $factory = \Drupal::service('entity_type_behaviors.config.factory');
+-  $entityTypeBundles = $factory->getConfiguredEntityTypesAndBundles();
+-
+-  if (empty($entityTypeBundles)) {
+-    return;
+-  }
+-
+-  $entityTypesWithBehaviors = array_keys($entityTypeBundles);
+-
+-  // We have to add a serialized field property to our entity type.
+-  $serializedFieldProperty['behaviors'] = [
+-    'value',
+-  ];
+-
+-  foreach ($entityTypesWithBehaviors as $id) {
+-    if (!isset($entity_types[$id])) {
+-      continue;
+-    }
+-
+-    $entityType = $entity_types[$id];
+-    $serializedFieldProperties = $entityType->get('serialized_field_property_names') ?? [];
+-    $serializedFieldProperties = array_merge($serializedFieldProperties, $serializedFieldProperty);
+-    $entityType->set('serialized_field_property_names', $serializedFieldProperties);
+-    $entity_types[$id] = $entityType;
+-  }
+-}
+-
+ /**
+  * Implements hook_entity_base_field_info().
+  */

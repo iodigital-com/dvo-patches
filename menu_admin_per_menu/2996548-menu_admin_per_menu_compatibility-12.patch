@@ -1,0 +1,94 @@
+diff --git a/menu_admin_per_menu.module b/menu_admin_per_menu.module
+index acc4eb8..d18d63e 100644
+--- a/menu_admin_per_menu.module
++++ b/menu_admin_per_menu.module
+@@ -5,6 +5,7 @@
+  * Module file for menu_admin_per_menu.
+  */
+ 
++use Drupal\Core\Access\AccessResult;
+ use Drupal\Core\Entity\EntityInterface;
+ use Drupal\Core\Form\FormStateInterface;
+ use Drupal\Core\Session\AccountInterface;
+@@ -104,6 +105,15 @@ function menu_admin_per_menu_filter_parent_options(AccountInterface $account, ar
+   return $options;
+ }
+ 
++/**
++ * Implements hook_ENTITY_TYPE_create_access() for entity type "menu_link_content".
++ */
++function menu_admin_per_menu_menu_link_content_create_access(AccountInterface $account, array $context, $entity_bundle) {
++  /** @var \Drupal\menu_admin_per_menu\MenuAdminPerMenuAccessInterface $allowedMenusService */
++  $allowedMenusService = \Drupal::service('menu_admin_per_menu.allowed_menus');
++  return AccessResult::allowedIf(!empty($allowedMenusService->getPerMenuPermissions($account)));
++}
++
+ /**
+  * Implements hook_ENTITY_TYPE_access() for entity type "menu_link_content".
+  */
+diff --git a/src/Routing/RouteSubscriber.php b/src/Routing/RouteSubscriber.php
+index 86359cb..b10a84b 100644
+--- a/src/Routing/RouteSubscriber.php
++++ b/src/Routing/RouteSubscriber.php
+@@ -5,6 +5,7 @@ namespace Drupal\menu_admin_per_menu\Routing;
+ use Drupal\Core\Routing\RouteSubscriberBase;
+ use Drupal\Core\Routing\RoutingEvents;
+ use Symfony\Component\Routing\RouteCollection;
++use Symfony\Component\Routing\Route;
+ 
+ /**
+  * Listens to the dynamic route events.
+@@ -20,17 +21,17 @@ class RouteSubscriber extends RouteSubscriberBase {
+       switch ($route_name) {
+         case 'entity.menu.collection':
+           $route->setDefaults(['_title' => $route->getDefault('_title'), '_controller' => '\Drupal\menu_admin_per_menu\Controller\MenuAdminPerMenuController::menuOverviewPage']);
+-          $route->setRequirements(['_custom_access' => '\Drupal\menu_admin_per_menu\Access\MenuAdminPerMenuAccess::menusOverviewAccess']);
++          $this->replaceAdministerMenuPermissionRequirement($route, '\Drupal\menu_admin_per_menu\Access\MenuAdminPerMenuAccess::menusOverviewAccess');
+           break;
+ 
+         case 'entity.menu.edit_form':
+         case 'entity.menu.add_link_form':
+-          $route->setRequirements(['_custom_access' => '\Drupal\menu_admin_per_menu\Access\MenuAdminPerMenuAccess::menuAccess']);
++          $this->replaceAdministerMenuPermissionRequirement($route, '\Drupal\menu_admin_per_menu\Access\MenuAdminPerMenuAccess::menuAccess');
+           break;
+ 
+         case 'menu_ui.link_edit':
+         case 'menu_ui.link_reset':
+-          $route->setRequirements(['_custom_access' => '\Drupal\menu_admin_per_menu\Access\MenuAdminPerMenuAccess::menuLinkAccess']);
++          $this->replaceAdministerMenuPermissionRequirement($route, '\Drupal\menu_admin_per_menu\Access\MenuAdminPerMenuAccess::menuLinkAccess');
+           break;
+ 
+         case 'entity.menu_link_content.canonical':
+@@ -39,13 +40,31 @@ class RouteSubscriber extends RouteSubscriberBase {
+         case 'entity.menu_link_content.content_translation_add':
+         case 'entity.menu_link_content.content_translation_edit':
+         case 'entity.menu_link_content.content_translation_delete':
+-          $route->setRequirements(['_custom_access' => '\Drupal\menu_admin_per_menu\Access\MenuAdminPerMenuAccess::menuItemAccess']);
++          $this->replaceAdministerMenuPermissionRequirement($route, '\Drupal\menu_admin_per_menu\Access\MenuAdminPerMenuAccess::menuItemAccess');
+           break;
+ 
+       }
+     }
+   }
+ 
++  /**
++   * @param \Symfony\Component\Routing\Route $route
++   *   The route that needs its permission replaced.
++   * @param mixed $replacement
++   *   Access callback which needs to check the 'administer menu' permission.
++   */
++  protected static function replaceAdministerMenuPermissionRequirement(Route $route, $replacement) {
++    $requirements = $route->getRequirements();
++    // We remove the core requirement on the 'administer menu' permission.
++    // We'll check that permission in our custom access check.
++    // NB: we assume that the permission was indeed 'administer menu', and that
++    // there was no _custom_access requirement before. Otherwise, it's been
++    // altered by another module, and we can't know which one should win...
++    unset($requirements['_permission'], $requirements['_entity_access']);
++    $requirements['_custom_access'] = $replacement;
++    $route->setRequirements($requirements);
++  }
++
+   /**
+    * {@inheritdoc}
+    */

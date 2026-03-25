@@ -1,0 +1,13 @@
+diff --git a/core/modules/file/file.js b/core/modules/file/file.js
+index 3c6d19a4c3..ad404fff71 100644
+--- a/core/modules/file/file.js
++++ b/core/modules/file/file.js
+@@ -177,7 +177,7 @@
+           $(this)
+             .closest('div.js-form-managed-file')
+             .prepend(
+-              `<div class="messages messages--error file-upload-js-error" aria-live="polite">${error}</div>`,
++              `<div class="messages messages--error file-upload-js-error" aria-live="assertive">${error}</div>`,
+             );
+           this.value = '';
+           // Cancel all other change event handlers.

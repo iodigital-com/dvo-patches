@@ -1,0 +1,390 @@
+diff --git a/config/install/tfa.settings.yml b/config/install/tfa.settings.yml
+index 38ad658..d26f711 100644
+--- a/config/install/tfa.settings.yml
++++ b/config/install/tfa.settings.yml
+@@ -1,6 +1,7 @@
+ langcode: en
+ enabled: false
+ required_roles: { }
++forced: 0
+ send_plugins: { }
+ login_plugins: { }
+ default_validation_plugin: ''
+diff --git a/config/schema/tfa.schema.yml b/config/schema/tfa.schema.yml
+index 4740703..05a3559 100644
+--- a/config/schema/tfa.schema.yml
++++ b/config/schema/tfa.schema.yml
+@@ -11,6 +11,9 @@ tfa.settings:
+       sequence:
+         type: string
+         label: 'Role'
++    forced:
++      type: integer
++      label: 'Force required roles to setup when on last validation skip'
+     send_plugins:
+       type: sequence
+       label: 'Enabled send plugins'
+diff --git a/src/EventSubscriber/ForceTfaSetup.php b/src/EventSubscriber/ForceTfaSetup.php
+new file mode 100644
+index 0000000..c4ae9f9
+--- /dev/null
++++ b/src/EventSubscriber/ForceTfaSetup.php
+@@ -0,0 +1,139 @@
++<?php
++
++namespace Drupal\tfa\EventSubscriber;
++
++use Drupal\Core\Config\ConfigFactoryInterface;
++use Drupal\Core\Entity\EntityTypeManagerInterface;
++use Drupal\Core\Messenger\MessengerInterface;
++use Drupal\Core\Routing\RouteMatchInterface;
++use Drupal\Core\Session\AccountProxyInterface;
++use Drupal\Core\Url;
++use Drupal\tfa\TfaValidationPluginManager;
++use Drupal\tfa\TfaLoginPluginManager;
++use Drupal\tfa\TfaLoginContextTrait;
++use Drupal\user\UserDataInterface;
++use Symfony\Component\EventDispatcher\EventSubscriberInterface;
++use Symfony\Component\HttpFoundation\RedirectResponse;
++use Symfony\Component\HttpKernel\Event\RequestEvent;
++use Symfony\Component\HttpKernel\KernelEvents;
++
++/**
++ * Event subscriber for enforcing TFA.
++ */
++class ForceTfaSetup implements EventSubscriberInterface {
++    use TfaLoginContextTrait;
++
++    /**
++     * The route match.
++     *
++     * @var \Drupal\Core\Routing\RouteMatchInterface
++     */
++    protected $routeMatch;
++
++    /**
++     * The messenger.
++     *
++     * @var \Drupal\Core\Messenger\MessengerInterface
++     */
++    protected $messenger;
++
++    /**
++     * The user account service.
++     *
++     * @var \Drupal\Core\Session\AccountInterface
++     */
++    protected $currentUser;
++
++    /**
++     * The user storage.
++     *
++     * @var \Drupal\user\UserStorageInterface
++     */
++    protected $userStorage;
++
++    /**
++     * Constructs an AutologoutSubscriber object.
++     *
++     * @param \Drupal\Core\Routing\RouteMatchInterface $route_match
++     *   The route match.
++     * @param \Drupal\Core\Messenger\MessengerInterface $messenger
++     *   The messenger.
++     * @param \Drupal\Core\Session\AccountProxyInterface $current_user
++     *   The current user.
++     * @param \Drupal\Core\Config\ConfigFactoryInterface $config_factory
++     *   The config factory.
++     * @param \Drupal\Core\Entity\EntityTypeManagerInterface $entity_type_manager
++     *   The entity type manager service.
++     * @param \Drupal\user\UserDataInterface $user_data
++     *   The user data service.
++     * @param \Drupal\tfa\TfaValidationPluginManager $tfa_validation_manager
++     *   The plugin manager for TFA validation plugins.
++     * @param \Drupal\tfa\TfaLoginPluginManager $tfa_plugin_manager
++     *   The plugin manager for TFA login plugins.
++     */
++    public function __construct(RouteMatchInterface $route_match, MessengerInterface $messenger, AccountProxyInterface $current_user, ConfigFactoryInterface $config_factory,
++                                EntityTypeManagerInterface $entity_type_manager, UserDataInterface $user_data, TfaValidationPluginManager $tfa_validation_manager, TfaLoginPluginManager $tfa_plugin_manager) {
++      $this->messenger = $messenger;
++      $this->routeMatch = $route_match;
++      $this->currentUser = $current_user;
++      $this->userStorage = $entity_type_manager->getStorage('user');
++      $this->tfaSettings = $config_factory->get('tfa.settings');
++      $this->userData = $user_data;
++      $this->tfaValidationManager = $tfa_validation_manager;
++      $this->tfaLoginManager = $tfa_plugin_manager;
++    }
++
++    /**
++     * Redirect users to TFA overview when no remaining skips.
++     *
++     * @param \Symfony\Component\HttpKernel\Event\RequestEvent $event
++     *   The request event.
++     */
++    public function redirect(RequestEvent $event): void {
++      /** @var \Drupal\user\UserInterface $user */
++      $user = $this->userStorage->load($this->currentUser->id());
++      $this->setUser($user);
++
++      if ($this->isReady() || !$this->forceTFASetup()) {
++        return;
++      }
++
++      $this->messenger->addWarning(t('You need to enable Two Factor Authentication.'));
++
++      // Don't redirect the user if on password/profile edit page,
++      // as it is possible the user used one-time login URL
++      // and need to change the password.
++      $ignored_route_names = [
++        'user.login',
++        'user.logout',
++        'user.pass',
++        'user.edit',
++        'entity.user.edit_form',
++        'user.reset.login',
++        'user.reset',
++        'user.reset.form',
++        'user.well-known.change_password',
++        'tfa.entry',
++        'tfa.login',
++        'tfa.overview',
++        'tfa.validation.setup',
++        'tfa.disable',
++        'tfa.plugin.reset',
++      ];
++      if (in_array($this->routeMatch->getRouteName(), $ignored_route_names)) {
++          return;
++      }
++
++      $tfa_overview_url = Url::fromRoute('tfa.overview', ['user' => $this->user->id()]);
++      $event->setResponse(new RedirectResponse($tfa_overview_url->toString()));
++    }
++
++    /**
++     * {@inheritdoc}
++     */
++    public static function getSubscribedEvents() {
++      $events[KernelEvents::REQUEST][] = ['redirect', 32];
++      return $events;
++    }
++
++}
+diff --git a/src/Form/SettingsForm.php b/src/Form/SettingsForm.php
+index 1d63a21..e231fec 100644
+--- a/src/Form/SettingsForm.php
++++ b/src/Form/SettingsForm.php
+@@ -179,6 +179,14 @@ class SettingsForm extends ConfigFormBase {
+       '#required' => FALSE,
+     ];
+
++    $form['tfa_forced'] = [
++      '#type' => 'checkbox',
++      '#title' => $this->t('Force TFA setup'),
++      '#default_value' => $config->get('forced'),
++      '#description' => $this->t('Force TFA setup on login, redirect user to TFA overview page.'),
++      '#states' => $enabled_state,
++    ];
++
+     $form['tfa_allowed_validation_plugins'] = [
+       '#type' => 'checkboxes',
+       '#title' => $this->t('Allowed Validation plugins'),
+@@ -465,6 +480,7 @@ class SettingsForm extends ConfigFormBase {
+     $this->config('tfa.settings')
+       ->set('enabled', $form_state->getValue('tfa_enabled'))
+       ->set('required_roles', $form_state->getValue('tfa_required_roles'))
++      ->set('forced', $form_state->getValue('tfa_forced'))
+       ->set('send_plugins', array_filter($send_plugins))
+       ->set('login_plugins', array_filter($login_plugins))
+       ->set('login_plugin_settings', $form_state->getValue('login_plugin_settings'))
+diff --git a/src/Form/TfaOverviewForm.php b/src/Form/TfaOverviewForm.php
+index 52b2e11..11a96c7 100644
+--- a/src/Form/TfaOverviewForm.php
++++ b/src/Form/TfaOverviewForm.php
+@@ -197,13 +197,15 @@ class TfaOverviewForm extends FormBase {
+         }
+       }
+
+-      $output['validation_skip_status'] = [
+-        '#type'   => 'markup',
+-        '#markup' => '<p>' . $this->t('Number of times validation skipped: @skipped of @limit', [
+-          '@skipped' => $user_tfa['validation_skipped'] ?? 0,
+-          '@limit' => $config->get('validation_skip'),
+-        ]) . '</p>',
+-      ];
++      if (!$config->get('forced')) {
++        $output['validation_skip_status'] = [
++          '#type' => 'markup',
++          '#markup' => '<p>' . $this->t('Number of times validation skipped: @skipped of @limit', [
++              '@skipped' => $user_tfa['validation_skipped'] ?? 0,
++              '@limit' => $config->get('validation_skip'),
++          ]) . '</p>',
++        ];
++      }
+     }
+     else {
+       $output['disabled'] = [
+diff --git a/src/Functional/ForceTfaSetupTest.php b/src/Functional/ForceTfaSetupTest.php
+new file mode 100644
+index 0000000..fea206c
+--- /dev/null
++++ b/src/Functional/ForceTfaSetupTest.php
+@@ -0,0 +1,99 @@
++<?php
++
++namespace Drupal\Tests\tfa\Functional;
++
++/**
++ * Tests for the tfa setup enforcement.
++ *
++ * @group Tfa
++ */
++class ForceTfaSetupTest extends TfaTestBase {
++
++  /**
++   * User doing the TFA Validation.
++   *
++   * @var \Drupal\user\Entity\User
++   */
++  protected $webUser;
++
++  /**
++   * Administrator to handle configurations.
++   *
++   * @var \Drupal\user\Entity\User
++   */
++  protected $adminUser;
++
++  /**
++   * TFA settings.
++   *
++   * @var \Drupal\Core\Config\Config
++   */
++  protected $config;
++
++  /**
++   * {@inheritdoc}
++   */
++  public function setUp() : void {
++    parent::setUp();
++    $this->webUser = $this->drupalCreateUser(['setup own tfa']);
++    $this->adminUser = $this->drupalCreateUser(['admin tfa settings']);
++    $this->config = $this->config('tfa.settings');
++    $this->config->set('validation_skip', 2)
++      ->set('enabled', 1)
++      ->set('forced', 1)
++      ->set('default_validation_plugin', 'tfa_recovery_code')
++      ->set('allowed_validation_plugins', ['tfa_recovery_code' => 'tfa_recovery_code'])
++      ->set('encryption', $this->encryptionProfile->id())
++      ->save();
++  }
++
++  /**
++   * Tests the tfa login process.
++   */
++  public function testTfaLogin() {
++    $assert_session = $this->assertSession();
++
++    // Setup enforcement is not active when the user roles are not required.
++    $this->drupalLogin($this->webUser);
++    $assert_session->statusCodeEquals(200);
++    $assert_session->addressEquals('user/' . $this->webUser->id());
++
++    // Make it required.
++    $web_user_roles = $this->webUser->getRoles(TRUE);
++    $this->config->set('required_roles', [$web_user_roles[0] => $web_user_roles[0]])
++      ->save();
++
++    // The User is redirected to the tfa page.
++    $this->drupalLogout();
++    $this->drupalLogin($this->webUser);
++    $assert_session->statusCodeEquals(200);
++    $assert_session->addressEquals('user/' . $this->webUser->id() . '/security/tfa');
++
++    // Disable again.
++    $this->config->set('forced', 0)->save();
++    $this->drupalGet('user/' . $this->webUser->id());
++    $assert_session->statusCodeEquals(200);
++    $assert_session->addressEquals('user/' . $this->webUser->id());
++
++    // Re-enable.
++    $this->config->set('forced', 1)->save();
++    $this->drupalGet('user/' . $this->webUser->id());
++    $assert_session->statusCodeEquals(200);
++    $assert_session->addressEquals('user/' . $this->webUser->id() . '/security/tfa');
++
++    $this->clickLink('Generate codes');
++    $assert_session->statusCodeEquals(200);
++    $assert_session->pageTextContains('Enter your current password to continue.');
++    $edit = [
++      'current_pass' => $this->webUser->passRaw,
++    ];
++    $this->submitForm($edit, 'Confirm');
++    $this->submitForm([], 'Save codes to account');
++
++    // Other pages can be visited now.
++    $this->drupalGet('user/' . $this->webUser->id());
++    $assert_session->statusCodeEquals(200);
++    $assert_session->addressEquals('user/' . $this->webUser->id());
++  }
++
++}
+\ No newline at end of file
+diff --git a/src/TfaLoginContextTrait.php b/src/TfaLoginContextTrait.php
+index ae346e8..9af39e8 100644
+--- a/src/TfaLoginContextTrait.php
++++ b/src/TfaLoginContextTrait.php
+@@ -156,6 +156,17 @@ trait TfaLoginContextTrait {
+     return FALSE;
+   }
+
++  /**
++   * Should we force TFA setup?
++   *
++   * @return bool
++   *   TRUE if TFA is enabled and there are no remaining skips left.
++   */
++  public function forceTFASetup(): bool {
++    return !$this->isTfaDisabled()
++      && $this->tfaSettings->get('forced');
++  }
++
+   /**
+    * Remaining number of allowed logins without setting up TFA.
+    *
+@@ -237,7 +248,11 @@ trait TfaLoginContextTrait {
+    *   Return true if the user can login without TFA,
+    *   otherwise return false.
+    */
+-  public function canLoginWithoutTfa(LoggerInterface $logger) {
++  public function canLoginWithoutTfa() {
++    if ($this->forceTFASetup()) {
++      $this->doUserLogin();
++      return;
++    }
+     $user = $this->getUser();
+
+     // Users that have configured a TFA method should not be allowed to skip.
+@@ -285,7 +300,6 @@ trait TfaLoginContextTrait {
+     else {
+       $message = $this->config('tfa.settings')->get('help_text');
+       $this->messenger()->addError($message);
+-      $logger->notice('@name has no more remaining attempts for bypassing the second authentication factor.', ['@name' => $user->getAccountName()]);
+     }
+
+     // User can't login without TFA.
+diff --git a/tfa.services.yml b/tfa.services.yml
+index 44ae361..f9ff610 100644
+--- a/tfa.services.yml
++++ b/tfa.services.yml
+@@ -16,5 +16,10 @@ services:
+     arguments: ['@user.data', '@encrypt.encryption_profile.manager','@encryption']
+   tfa.route_subscriber:
+     class: Drupal\tfa\Routing\TfaRouteSubscriber
++    tags:
++      - { name: event_subscriber }
++  tfa.force_setup:
++    class: Drupal\tfa\EventSubscriber\ForceTfaSetup
++    arguments: ['@current_route_match', '@messenger', '@current_user', '@config.factory', '@entity_type.manager', '@user.data', '@plugin.manager.tfa.validation', '@plugin.manager.tfa.login']
+     tags:
+       - { name: event_subscriber }
+\ No newline at end of file

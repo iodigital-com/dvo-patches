@@ -1,0 +1,117 @@
+diff --git a/config/schema/webform_scheduled_tasks.schema.yml b/config/schema/webform_scheduled_tasks.schema.yml
+index bf811566d53841191179e73daa162e28db28f447..ff08807e2db0a548085c05b291ebe546de6a38b3 100644
+--- a/config/schema/webform_scheduled_tasks.schema.yml
++++ b/config/schema/webform_scheduled_tasks.schema.yml
+@@ -30,6 +30,9 @@ webform_scheduled_tasks.scheduled_task.*:
+         multiplier:
+           label: 'Multiplier'
+           type: integer
++        relative_to:
++          label: 'Relative to'
++          type: string
+     webform:
+       type: string
+       label: 'Webform'
+diff --git a/src/Entity/WebformScheduledTask.php b/src/Entity/WebformScheduledTask.php
+index 060ebbb7c5554c7262f13ec825ae464b53790a6b..71e2f6dc08392a208881df8cfd28ef2c5e8ae114 100644
+--- a/src/Entity/WebformScheduledTask.php
++++ b/src/Entity/WebformScheduledTask.php
+@@ -121,6 +121,16 @@ class WebformScheduledTask extends ConfigEntityBase implements WebformScheduledT
+    */
+   protected $time;
+ 
++  /**
++   * Determines the next scheduled run based upon the previous schedule.
++   */
++  const PREVIOUS_SCHEDULE = 'previous_schedule';
++
++  /**
++   * Determines the next scheduled run based upon the previous run.
++   */
++  const PREVIOUS_RUN = 'previous_run';
++
+   /**
+    * {@inheritdoc}
+    */
+@@ -188,6 +198,13 @@ class WebformScheduledTask extends ConfigEntityBase implements WebformScheduledT
+     return $this->interval['multiplier'] ?? NULL;
+   }
+ 
++  /**
++   * {@inheritdoc}
++   */
++  public function getRelativeTo() {
++    return $this->interval['relative_to'] ?? WebformScheduledTask::PREVIOUS_RUN;
++  }
++
+   /**
+    * {@inheritdoc}
+    */
+@@ -230,7 +247,23 @@ class WebformScheduledTask extends ConfigEntityBase implements WebformScheduledT
+    */
+   public function incrementTaskRunDateByInterval() {
+     if ($this->getRunIntervalMultiplier() && $this->getRunIntervalAmount()) {
+-      $this->setNextTaskRunDate($this->getTime()->getRequestTime() + ($this->getRunIntervalMultiplier() * $this->getRunIntervalAmount()));
++      if ($this->getRelativeTo() === WebformScheduledTask::PREVIOUS_SCHEDULE) {
++        // If the next run is based on the previous schedule, we use the
++        // scheduled time.
++        $scheduled_time = $this->getScheduleState()->getNextScheduledTime($this);
++
++        // While the scheduled time is before the requested time, increment it.
++        while ($scheduled_time < $this->getTime()->getRequestTime()) {
++          $scheduled_time += ($this->getRunIntervalMultiplier() * $this->getRunIntervalAmount());
++        }
++
++        $this->setNextTaskRunDate($scheduled_time);
++      }
++      else {
++        // If the next run is based on the previous run, we use the request time.
++        $this->setNextTaskRunDate($this->getTime()
++            ->getRequestTime() + ($this->getRunIntervalMultiplier() * $this->getRunIntervalAmount()));
++      }
+     }
+   }
+ 
+diff --git a/src/Entity/WebformScheduledTaskInterface.php b/src/Entity/WebformScheduledTaskInterface.php
+index bd7b5bea7a6825003c86ba2ef8fbafb51f3e015b..a0aecf72c62233649604287abc8c3e3e556c3bf1 100644
+--- a/src/Entity/WebformScheduledTaskInterface.php
++++ b/src/Entity/WebformScheduledTaskInterface.php
+@@ -17,6 +17,14 @@ interface WebformScheduledTaskInterface extends ConfigEntityInterface {
+    */
+   public function getTaskPlugin();
+ 
++  /**
++   * Gets the relative_to to determine when the next scheduled run takes place.
++   *
++   * @return string
++   *   The selected relative_to option.
++   */
++  public function getRelativeTo();
++
+   /**
+    * Get the result set plugin.
+    *
+diff --git a/src/Form/WebformScheduledTaskForm.php b/src/Form/WebformScheduledTaskForm.php
+index b3af9f0291bb271ba337a99eafd0687ed141860d..01535523fda66947cf940b94d5b6b302008c3d1c 100644
+--- a/src/Form/WebformScheduledTaskForm.php
++++ b/src/Form/WebformScheduledTaskForm.php
+@@ -150,6 +150,19 @@ class WebformScheduledTaskForm extends EntityForm {
+         ],
+         '#default_value' => $schedule->getRunIntervalMultiplier(),
+       ];
++      $form['schedule_settings']['interval']['relative_to'] = [
++        '#type' => 'select',
++        '#required' => TRUE,
++        '#field_prefix' => $this->t('relative to') . ' ',
++        '#wrapper_attributes' => [
++          'style' => 'display: inline-block;',
++        ],
++        '#options' => [
++          WebformScheduledTask::PREVIOUS_SCHEDULE => $this->t('Previous scheduled run'),
++          WebformScheduledTask::PREVIOUS_RUN => $this->t('Previous task run'),
++        ],
++        '#default_value' => $schedule->getRelativeTo(),
++      ];
+ 
+       $form['task_settings'] = $this->createPluginForm('task_settings', $this->t('Task settings'), $schedule->getTaskPlugin(), $form, $form_state);
+       $form['result_set_settings'] = $this->createPluginForm('result_set_settings', $this->t('Result set settings'), $schedule->getResultSetPlugin(), $form, $form_state);

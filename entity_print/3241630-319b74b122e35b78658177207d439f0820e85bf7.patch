@@ -1,0 +1,53 @@
+From 319b74b122e35b78658177207d439f0820e85bf7 Mon Sep 17 00:00:00 2001
+From: Bart Langelaan <langelaanbart@gmail.com>
+Date: Fri, 8 Oct 2021 17:28:02 +0200
+Subject: [PATCH] Issue #3241630: Engines not available in tests
+
+---
+ src/Plugin/EntityPrint/PrintEngine/DomPdf.php         | 2 +-
+ src/Plugin/EntityPrint/PrintEngine/PhpWkhtmlToPdf.php | 2 +-
+ src/Plugin/EntityPrint/PrintEngine/TcPdfv1.php        | 2 +-
+ 3 files changed, 3 insertions(+), 3 deletions(-)
+
+diff --git a/src/Plugin/EntityPrint/PrintEngine/DomPdf.php b/src/Plugin/EntityPrint/PrintEngine/DomPdf.php
+index a457c19..200ea10 100644
+--- a/src/Plugin/EntityPrint/PrintEngine/DomPdf.php
++++ b/src/Plugin/EntityPrint/PrintEngine/DomPdf.php
+@@ -243,7 +243,7 @@ class DomPdf extends PdfEngineBase implements ContainerFactoryPluginInterface {
+    * {@inheritdoc}
+    */
+   public static function dependenciesAvailable() {
+-    return class_exists('Dompdf\Dompdf') && !drupal_valid_test_ua();
++    return class_exists('Dompdf\Dompdf');
+   }
+ 
+   /**
+diff --git a/src/Plugin/EntityPrint/PrintEngine/PhpWkhtmlToPdf.php b/src/Plugin/EntityPrint/PrintEngine/PhpWkhtmlToPdf.php
+index dc5547c..b255874 100644
+--- a/src/Plugin/EntityPrint/PrintEngine/PhpWkhtmlToPdf.php
++++ b/src/Plugin/EntityPrint/PrintEngine/PhpWkhtmlToPdf.php
+@@ -245,7 +245,7 @@ class PhpWkhtmlToPdf extends PdfEngineBase implements AlignableHeaderFooterInter
+    * {@inheritdoc}
+    */
+   public static function dependenciesAvailable() {
+-    return class_exists('mikehaertl\wkhtmlto\Pdf') && !drupal_valid_test_ua();
++    return class_exists('mikehaertl\wkhtmlto\Pdf');
+   }
+ 
+   /**
+diff --git a/src/Plugin/EntityPrint/PrintEngine/TcPdfv1.php b/src/Plugin/EntityPrint/PrintEngine/TcPdfv1.php
+index 5ab3e46..fae4512 100644
+--- a/src/Plugin/EntityPrint/PrintEngine/TcPdfv1.php
++++ b/src/Plugin/EntityPrint/PrintEngine/TcPdfv1.php
+@@ -108,7 +108,7 @@ class TcPdfv1 extends PrintEngineBase {
+    * {@inheritdoc}
+    */
+   public static function dependenciesAvailable() {
+-    return class_exists('\TCPDF') && !drupal_valid_test_ua();
++    return class_exists('\TCPDF');
+   }
+ 
+   /**
+-- 
+GitLab
+

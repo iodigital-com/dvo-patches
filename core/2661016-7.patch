@@ -1,0 +1,15 @@
+diff --git a/core/assets/scaffold/files/htaccess b/core/assets/scaffold/files/htaccess
+index b1ee36bf4c..51ccd79366 100644
+--- a/core/assets/scaffold/files/htaccess
++++ b/core/assets/scaffold/files/htaccess
+@@ -143,6 +143,10 @@ AddEncoding gzip svgz
+   # Copy and adapt this rule to directly execute PHP files in contributed or
+   # custom modules or to run another PHP application in the same directory.
+   RewriteCond %{REQUEST_URI} !/core/modules/statistics/statistics\.php$
++
++  # Allow access to simplesaml paths
++  RewriteCond %{REQUEST_URI} !^/simplesaml
++
+   # Deny access to any other PHP files that do not match the rules above.
+   # Specifically, disallow autoload.php from being served directly.
+   RewriteRule "^(.+/.*|autoload)\.php($|/)" - [F]

@@ -1,0 +1,50 @@
+diff --git a/potx.inc b/potx.inc
+index 847c99a..f3d3814 100644
+--- a/potx.inc
++++ b/potx.inc
+@@ -17,6 +17,7 @@
+  *   'Localization server' module: http://drupal.org/project/l10n_server
+  */
+ 
++use Drupal\Component\Gettext\PoItem;
+ use Symfony\Component\Yaml\Yaml;
+ use Symfony\Component\Yaml\Exception\ParseException;
+ use Twig\Environment;
+@@ -621,12 +622,32 @@ function _potx_translation_export($translation_export_langcode, $string, $plural
+     $output = '';
+     if (count($strings)) {
+       // Source string array was done, so export translations.
+-      foreach ($strings as $index => $string) {
+-        if ($translation = $connection->query("SELECT t.translation FROM {locales_source} s LEFT JOIN {locales_target} t ON t.lid = s.lid WHERE s.source = :source AND t.{$language_column} = :langcode", [':source' => $string, ':langcode' => $translation_export_langcode])->fetchField()) {
+-          $output .= 'msgstr[' . $index . '] ' . _locale_export_string(_locale_export_remove_plural($translation));
++      $query = $connection->select('locales_source', 's');
++      $query->leftJoin('locales_target', 't', 't.lid = s.lid');
++      $query->fields('t', ['translation']);
++      $query->condition('t.' . $language_column, $translation_export_langcode);
++
++      if ($number_of_plurals > 1) {
++        $string = implode(PoItem::DELIMITER, $strings);
++        $query->condition('s.source', $string);
++        $result = $query->execute();
++        if ($result && $translations = $result->fetchField()) {
++          $translations = explode(PoItem::DELIMITER, $translations);
++          foreach ($translations as $index => $translation) {
++            $output .= 'msgstr[' . $index . '] ' . _locale_export_string($translation);
++          }
+         }
+-        else {
+-          $output .= "msgstr[" . $index . "] \"\"\n";
++      }
++      else {
++        foreach ($strings as $index => $string) {
++          $query->condition('s.source', $string);
++          $result = $query->execute();
++          if ($result && $translation = $result->fetchField()) {
++            $output .= 'msgstr[' . $index . '] ' . _locale_export_string(_locale_export_remove_plural($translation));
++          }
++          else {
++            $output .= "msgstr[" . $index . "] \"\"\n";
++          }
+         }
+       }
+     }
