@@ -1,0 +1,37 @@
+diff --git a/src/FixedPathAliasManager.php b/src/FixedPathAliasManager.php
+index c53098e..a9c0f03 100644
+--- a/src/FixedPathAliasManager.php
++++ b/src/FixedPathAliasManager.php
+@@ -220,18 +220,25 @@ class FixedPathAliasManager implements AliasManagerInterface, CacheDecoratorInte
+    *   A keyed array with the fixed alias config entry.
+    */
+   protected function restoreAlias(array $fixed_alias) {
+-    $new_alias = $this->getPathAliasEntityStorage()->create([
++    $alias_exists = $this->getPathAliasEntityStorage()->loadByProperties([
+       'path' => $fixed_alias['source'],
+       'alias' => $fixed_alias['alias'],
+       'langcode' => $fixed_alias['langcode'],
+     ]);
+-    if ($new_alias->save()) {
+-      // Log the event.
+-      $edit_link = $new_alias->toLink($this->t('Edit'), 'edit-form')->toString();
+-      $this->logger->notice('Path alias %alias restored from config.', [
+-        '%alias' => $fixed_alias['alias'],
+-        'link' => $edit_link,
++    if (empty($alias_exists)) {
++      $new_alias = $this->getPathAliasEntityStorage()->create([
++        'path' => $fixed_alias['source'],
++        'alias' => $fixed_alias['alias'],
++        'langcode' => $fixed_alias['langcode'],
+       ]);
++      if ($new_alias->save()) {
++        // Log the event.
++        $edit_link = $new_alias->toLink($this->t('Edit'), 'edit-form')->toString();
++        $this->logger->notice('Path alias %alias restored from config.', [
++          '%alias' => $fixed_alias['alias'],
++          'link' => $edit_link,
++        ]);
++      }
+     }
+   }
+ 

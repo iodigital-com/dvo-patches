@@ -1,0 +1,10 @@
+diff --git a/fixed_path_alias.services.yml b/fixed_path_alias.services.yml
+index 54150d5..e78a029 100644
+--- a/fixed_path_alias.services.yml
++++ b/fixed_path_alias.services.yml
+@@ -9,5 +9,3 @@ services:
+     decoration_inner_name: path_alias.manager.inner
+     arguments: ['@path_alias.manager.inner', '@entity_type.manager', '@path_alias.repository', '@language_manager', '@config.factory', '@logger.channel.fixed_path_alias']
+     public: false
+-    properties:
+-      _serviceId: 'path_alias.manager'

@@ -1,0 +1,24 @@
+diff --git a/composer.json b/composer.json
+index ac36177..a1ffd60 100644
+--- a/composer.json
++++ b/composer.json
+@@ -5,7 +5,7 @@
+   "homepage" : "http://drupal.org/project/fixed_path_alias",
+   "license" : "GPL-2.0+",
+   "require": {
+-    "drupal/core": "^8.8 || ^9"
++    "drupal/core": "^8.8 || ^9 || ^10"
+   },
+   "minimum-stability" : "dev",
+   "authors" : [
+diff --git a/fixed_path_alias.info.yml b/fixed_path_alias.info.yml
+index 6ae6084..76628ca 100644
+--- a/fixed_path_alias.info.yml
++++ b/fixed_path_alias.info.yml
+@@ -1,5 +1,5 @@
+ type: module
+-core_version_requirement: ^8.8 || ^9
++core_version_requirement: ^8.8 || ^9 || ^10
+ name: Fixed Path Alias
+ description: 'Exports path aliases to config to make them available in any environment.'
+ package: Other

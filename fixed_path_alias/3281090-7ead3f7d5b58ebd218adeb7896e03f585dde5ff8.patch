@@ -1,0 +1,25 @@
+From 7ead3f7d5b58ebd218adeb7896e03f585dde5ff8 Mon Sep 17 00:00:00 2001
+From: bartlangelaan <bartlangelaan@1656706.no-reply.drupal.org>
+Date: Wed, 18 May 2022 10:51:52 +0000
+Subject: [PATCH] Issue #3281090: Invalid config schema
+
+---
+ config/schema/fixed_path_alias.schema.yml | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/config/schema/fixed_path_alias.schema.yml b/config/schema/fixed_path_alias.schema.yml
+index f04f10b..71e5af4 100644
+--- a/config/schema/fixed_path_alias.schema.yml
++++ b/config/schema/fixed_path_alias.schema.yml
+@@ -14,7 +14,7 @@ fixed_path_alias.aliases:
+             type: string
+             label: 'Source'
+           alias:
+-            type: alias
++            type: string
+             label: 'Alias'
+           langcode:
+             type: string
+-- 
+GitLab
+
