@@ -1,3 +1,12 @@
+diff --git a/autologout.routing.yml b/autologout.routing.yml
+index 85e1a04..2580ea2 100644
+--- a/autologout.routing.yml
++++ b/autologout.routing.yml
+@@ -42,4 +42,3 @@ autologout.ajax_get_time_left:
+     _theme: ajax_base_page
+   requirements:
+     _user_is_logged_in: 'TRUE'
+-    _csrf_token: 'TRUE'
 diff --git a/js/autologout.js b/js/autologout.js
 index a2713da..6ad970c 100644
 --- a/js/autologout.js
