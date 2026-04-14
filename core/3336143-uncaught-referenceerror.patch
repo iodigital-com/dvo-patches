@@ -1,0 +1,13 @@
+diff --git a/core/core.libraries.yml b/core/core.libraries.yml
+index 5ec851e898e7652d7f8ab474dfaf6ef3b138f4c4..06097a99fa595c331c8a5b654a038bab98d534fd 100644
+--- a/core/core.libraries.yml
++++ b/core/core.libraries.yml
+@@ -415,7 +415,7 @@ loadjs:
+     url: https://raw.githubusercontent.com/muicss/loadjs/4.3.0/LICENSE.txt
+     gpl-compatible: true
+   js:
+-    assets/vendor/loadjs/loadjs.min.js: { minified: true }
++    assets/vendor/loadjs/loadjs.min.js: { minified: true, preprocess: false }
+ 
+ # Common files for libraries that still rely on jQuery UI components.
+ # @todo Remove when no longer required by drupal.autocomplete and drupal.dialog.
