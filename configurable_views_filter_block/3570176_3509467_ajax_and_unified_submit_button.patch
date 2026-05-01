@@ -1,0 +1,348 @@
+diff --git a/README.md b/README.md
+index edf5f4d..cb27bf7 100644
+--- a/README.md
++++ b/README.md
+@@ -3,6 +3,8 @@
+ Extends the default exposed filters block from Views with additional options to
+ display only some specific filters per block instance.
+ 
++Hidden filters can be visually hidden or completely removed from the form.
++
+ The module provides visibility control over the reset button and sort options
+ as well.
+ 
+diff --git a/config/schema/configurable_views_filter_block.schema.yml b/config/schema/configurable_views_filter_block.schema.yml
+index b51432c..17c5632 100644
+--- a/config/schema/configurable_views_filter_block.schema.yml
++++ b/config/schema/configurable_views_filter_block.schema.yml
+@@ -23,3 +23,12 @@ configurable_views_filter_block:
+     no_pager:
+       type: boolean
+       label: 'Hide pager'
++    form_id:
++      type: string
++      label: 'Static form ID'
++    external_form_id:
++      type: string
++      label: 'External form ID'
++    removal_strategy:
++      type: string
++      label: 'Filter and form element removal strategy'
+diff --git a/configurable_views_filter_block.libraries.yml b/configurable_views_filter_block.libraries.yml
+index e58fd3a..4036a39 100644
+--- a/configurable_views_filter_block.libraries.yml
++++ b/configurable_views_filter_block.libraries.yml
+@@ -3,3 +3,13 @@ configurable_views_filter_block.theme:
+   css:
+     theme:
+       css/configurable_views_filter_block.theme.css: {}
++
++autosubmit:
++  version: 1.0.1
++  js:
++    js/configurable_views_filter_block.js: {}
++  dependencies:
++    - core/jquery
++    - core/drupal
++    - core/drupal.debounce
++    - core/once
+diff --git a/js/configurable_views_filter_block.js b/js/configurable_views_filter_block.js
+new file mode 100644
+index 0000000..cdec139
+--- /dev/null
++++ b/js/configurable_views_filter_block.js
+@@ -0,0 +1,88 @@
++(function ($, Drupal, once) {
++  Drupal.behaviors.configurableViewsFilterBlockAutoSubmit = {
++    attach: function (context) {
++      var elements = once(
++        'cvfb-auto-submit',
++        '[data-cvfb-external-form-id]',
++        context
++      );
++      $(elements).each(function () {
++        var $element = $(this);
++        var externalFormId = $element.data('cvfb-external-form-id');
++        var $externalForm = $('#' + externalFormId);
++
++        if ($externalForm.length) {
++          // Add data-bef-auto-submit-exclude to prevent BEF's own auto-submit.
++          $element.attr('data-bef-auto-submit-exclude', '');
++
++          $element.closest('.js-facets-widget').on('facets_filter.cvfb', function (event) {
++            event.preventDefault();
++            event.stopPropagation();
++            event.stopImmediatePropagation();
++          });
++
++          $element.on('facets_filter.cvfb', function (event) {
++            event.preventDefault();
++            event.stopPropagation();
++            event.stopImmediatePropagation();
++          });
++
++          $element.on('change', function (event) {
++            // Stop other handlers (like BEF's auto-submit) from running.
++            event.stopImmediatePropagation();
++            event.stopPropagation();
++
++            // Click the submit button in the external form.
++            var $submit = $externalForm.find('[data-bef-auto-submit-click]');
++            if ($submit.length) {
++              // Trigger a real click so that Drupal AJAX can catch it.
++              $submit[0].click();
++            }
++            else {
++              // Fallback to finding any submit button if no BEF-specific one.
++              $submit = $externalForm.find('input[type="submit"], button[type="submit"]').first();
++              if ($submit.length) {
++                $submit[0].click();
++              }
++              else {
++                $externalForm.submit();
++              }
++            }
++          });
++
++          // Also handle keyup for textfields if BEF auto-submit is enabled.
++          if ($element.is(':text:not(.hasDatepicker), textarea')) {
++            var $form = $element.closest('form');
++            var delay = $form.data('bef-auto-submit-delay') || 500;
++            $element.on('keyup', Drupal.debounce(function (event) {
++              // Stop other handlers (like BEF's auto-submit) from running.
++              event.stopImmediatePropagation();
++              event.stopPropagation();
++
++              var ignored = [
++                16, 17, 18, 20, 33, 34, 35, 36, 37, 38, 39, 40, 9, 13, 27
++              ];
++              if ($.inArray(event.keyCode, ignored) === -1) {
++                var $submit = $externalForm.find(
++                  '[data-bef-auto-submit-click]'
++                );
++                if ($submit.length) {
++                  $submit[0].click();
++                }
++                else {
++                  $submit = $externalForm.find('input[type="submit"], button[type="submit"]').first();
++                  if ($submit.length) {
++                    $submit[0].click();
++                  }
++                  else {
++                    $externalForm.submit();
++                  }
++                }
++              }
++            }, delay));
++          }
++        }
++      });
++    }
++  };
++})(jQuery, Drupal, once);
+diff --git a/src/Plugin/Block/ConfigurableViewsExposedFilterBlock.php b/src/Plugin/Block/ConfigurableViewsExposedFilterBlock.php
+index 5a722ac..c0ea011 100644
+--- a/src/Plugin/Block/ConfigurableViewsExposedFilterBlock.php
++++ b/src/Plugin/Block/ConfigurableViewsExposedFilterBlock.php
+@@ -34,6 +34,9 @@ class ConfigurableViewsExposedFilterBlock extends CoreViewsExposedFilterBlock {
+       'no_reset' => FALSE,
+       'no_sort' => FALSE,
+       'no_pager' => FALSE,
++      'form_id' => '',
++      'external_form_id' => '',
++      'removal_strategy' => 'hide',
+     ] + parent::defaultConfiguration();
+   }
+ 
+@@ -73,6 +76,31 @@ class ConfigurableViewsExposedFilterBlock extends CoreViewsExposedFilterBlock {
+     if (empty($options)) {
+       $form['visible_filters']['info'] = ['#markup' => $this->t('The view has no exposed filters.')];
+     }
++
++    $form['form_id'] = [
++      '#type' => 'textfield',
++      '#title' => $this->t('Static Form ID'),
++      '#description' => $this->t('Manually set the desired form ID. If left empty, a unique form ID will be generated automatically.'),
++      '#default_value' => $this->configuration['form_id'] ?? '',
++    ];
++
++    $form['external_form_id'] = [
++      '#type' => 'textfield',
++      '#title' => $this->t('External Form ID'),
++      '#description' => $this->t('Map form elements using the "form" attribute to another form. Useful for having a single submit button across multiple form blocks.'),
++      '#default_value' => $this->configuration['external_form_id'] ?? '',
++    ];
++
++    $form['removal_strategy'] = [
++      '#type' => 'select',
++      '#title' => $this->t('Filter removal strategy'),
++      '#options' => [
++        'hide' => $this->t('Visually hide'),
++        'remove' => $this->t('Remove'),
++      ],
++      '#default_value' => $this->configuration['removal_strategy'],
++      '#required' => TRUE,
++    ];
+   }
+ 
+   /**
+@@ -122,7 +150,7 @@ class ConfigurableViewsExposedFilterBlock extends CoreViewsExposedFilterBlock {
+    * Checks if the current view has exposed sorts.
+    *
+    * @return bool
+-   *  TRUE if the view has exposed sorts, FALSE otherwise.
++   *   TRUE if the view has exposed sorts, FALSE otherwise.
+    */
+   protected function viewsHasExposedSorts() {
+     $sorts = $this->view->display_handler->getHandlers('sort');
+@@ -142,6 +170,9 @@ class ConfigurableViewsExposedFilterBlock extends CoreViewsExposedFilterBlock {
+     parent::blockSubmit($form, $form_state);
+ 
+     $this->configuration['visible_filters'] = array_filter($form_state->getValue('visible_filters'));
++    $this->configuration['form_id'] = $form_state->getValue('form_id');
++    $this->configuration['external_form_id'] = $form_state->getValue('external_form_id');
++    $this->configuration['removal_strategy'] = $form_state->getValue('removal_strategy');
+ 
+     $form_options = $form_state->getValue('form_options');
+     $this->configuration['no_groups'] = !empty($form_options['no_groups']);
+@@ -162,9 +193,20 @@ class ConfigurableViewsExposedFilterBlock extends CoreViewsExposedFilterBlock {
+     // Set an new unique form id from the build id if available, or by adding a
+     // random number to the current id.
+     $new_form_id = isset($build['#build_id']) ? $build['#build_id'] : $build['#id'] . rand(100, 999);
++    // If there's a custom form id set, use it.
++    $custom_form_id = $this->configuration['form_id'] ?? '';
++    $new_form_id = !empty($custom_form_id) ? $custom_form_id : $new_form_id;
+     $build['#id'] = $new_form_id;
+     $build['#attributes']['data-drupal-selector'] = $new_form_id;
+-
++    $external_form_id = $this->configuration['external_form_id'] ?? '';
++    if (!empty($external_form_id)) {
++      // Set the form attribute to use an external form for all input elements.
++      $this->setFormAttribute($build, 'form', $external_form_id);
++      // Set data attribute for auto-submit fix.
++      $this->setFormAttribute($build, 'data-cvfb-external-form-id', $external_form_id);
++      // Add auto-submit library.
++      $build['#attached']['library'][] = 'configurable_views_filter_block/autosubmit';
++    }
+     // Add CSS.
+     $build['#attached']['library'][] = 'configurable_views_filter_block/configurable_views_filter_block.theme';
+ 
+@@ -322,17 +364,58 @@ class ConfigurableViewsExposedFilterBlock extends CoreViewsExposedFilterBlock {
+   }
+ 
+   /**
+-   * Hides a given element.
+-   *
+-   * Current form field values are lost by using the "#access" property, so
+-   * form fields are only visually hidden.
++   * Hides or removes a given element per configured removal strategy.
+    *
+    * @param array $element
+-   *   The form element to be hide.
++   *   The form element to hide or remove.
++   */
++  protected function hideElement(array &$element) {
++    switch ($this->configuration['removal_strategy']) {
++      case 'hide':
++        $element['#prefix'] = '<div class="hidden-exposed-filter">';
++        $element['#suffix'] = '</div>';
++        break;
++
++      case 'remove':
++        $element['#access'] = FALSE;
++        break;
++
++    }
++  }
++
++  /**
++   * Sets a given attribute to all form input elements in the build array.
++   *
++   * @param array $build
++   *   The current build array.
++   * @param string $attribute
++   *   The attribute name.
++   * @param string $value
++   *   The attribute value.
+    */
+-  protected function hideElement(&$element) {
+-    $element['#prefix'] = '<div class="hidden-exposed-filter">';
+-    $element['#suffix'] = '</div>';
++  protected function setFormAttribute(array &$build, string $attribute, string $value) {
++    $inputTypes = [
++      'textfield',
++      'textarea',
++      'select',
++      'checkbox',
++      'radios',
++      'radio',
++      'email',
++      'number',
++      'tel',
++      'url',
++      'date',
++      'datetime',
++      'password',
++    ];
++    foreach (Element::children($build) as $child_name) {
++      if (isset($build[$child_name]['#type']) && in_array($build[$child_name]['#type'], $inputTypes)) {
++        $build[$child_name]['#attributes'][$attribute] = $value;
++      }
++      // Recurse into child elements.
++      $this->setFormAttribute($build[$child_name], $attribute, $value);
++    }
+   }
+ 
+ }
+diff --git a/tests/src/Functional/FunctionalTest.php b/tests/src/Functional/FunctionalTest.php
+index 7cec9d1..0bc7337 100644
+--- a/tests/src/Functional/FunctionalTest.php
++++ b/tests/src/Functional/FunctionalTest.php
+@@ -31,14 +31,22 @@ final class FunctionalTest extends BrowserTestBase {
+   protected function setUp(): void {
+     parent::setUp();
+ 
+-    // Creates two configurable views filter block instances.
++    // Place a configurable views filter block into the "content_above" region,
++    // showing only the "title" filter, using the "Visually hide" element
++    // removal strategy.
+     $this->placeBlock('configurable_views_filter_block_block:view_simple_exposed_filters-page_1', [
+       'region' => 'content_above',
+       'visible_filters' => ['title'],
++      'removal_strategy' => 'hide',
+     ]);
++
++    // Place a configurable views filter block into the "sidebar" region,
++    // showing only the "uid" filter, using the "Remove" element removal
++    // strategy.
+     $this->placeBlock('configurable_views_filter_block_block:view_simple_exposed_filters-page_1', [
+       'region' => 'sidebar',
+       'visible_filters' => ['uid'],
++      'removal_strategy' => 'remove',
+     ]);
+   }
+ 
+@@ -51,14 +59,19 @@ final class FunctionalTest extends BrowserTestBase {
+     $this->drupalGet('/test');
+     $assert_session = $this->assertSession();
+ 
+-    // Checks that title is the only visible input filter in the main region.
++    // Verify the first block's "title" filter is present.
++    $assert_session->elementExists('xpath', '//main//input[@name="title"]');
++    // Verify the first block's "title" filter is not visually-hidden.
+     $assert_session->elementNotExists('xpath', '//main//div[@class="hidden-exposed-filter"]//input[@name="title"]');
++    // Verify the first block's "uid" filter is present and visually-hidden.
+     $assert_session->elementExists('xpath', '//main//div[@class="hidden-exposed-filter"]//input[@name="uid"]');
+ 
+-    // Checks that user ID is the only visible input filter in the sidebar
+-    // region.
++    // Verify the second block's "uid" filter is present.
++    $assert_session->elementExists('xpath', '//aside//input[@name="uid"]');
++    // Verify the second block's "uid" filter is not visually-hidden.
+     $assert_session->elementNotExists('xpath', '//aside//div[@class="hidden-exposed-filter"]//input[@name="uid"]');
+-    $assert_session->elementExists('xpath', '//aside//div[@class="hidden-exposed-filter"]//input[@name="title"]');
++    // Verify the second block's "title" filter is not present.
++    $assert_session->elementNotExists('xpath', '//aside//input[@name="title"]');
+   }
+ 
+ }
