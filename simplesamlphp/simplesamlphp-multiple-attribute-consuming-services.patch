@@ -1,0 +1,72 @@
+diff --git a/modules/saml/src/Auth/Source/SP.php b/modules/saml/src/Auth/Source/SP.php
+--- a/modules/saml/src/Auth/Source/SP.php
++++ b/modules/saml/src/Auth/Source/SP.php
+@@ -206,6 +206,12 @@
+             }
+         }
+
++        // add multiple AttributeConsumingService definitions
++        $acs = $this->metadata->getOptionalArray('AttributeConsumingService', []);
++        if (!empty($acs)) {
++            $metadata['AttributeConsumingService'] = $acs;
++        }
++
+         // add organization info
+         $org = $this->metadata->getOptionalLocalizedString('OrganizationName', null);
+         if ($org !== null) {
+diff --git a/src/SimpleSAML/Metadata/SAMLBuilder.php b/src/SimpleSAML/Metadata/SAMLBuilder.php
+--- a/src/SimpleSAML/Metadata/SAMLBuilder.php
++++ b/src/SimpleSAML/Metadata/SAMLBuilder.php
+@@ -393,6 +393,10 @@
+         SPSSODescriptor $spDesc,
+         Configuration $metadata,
+     ): void {
++        if (!empty($metadata->getOptionalArray('AttributeConsumingService', []))) {
++            return;
++        }
++
+         $attributes = $metadata->getOptionalArray('attributes', []);
+         $name = $metadata->getOptionalLocalizedString('name', null);
+
+@@ -506,6 +510,41 @@
+         }
+         $e->setAssertionConsumerService(self::createEndpoints($endpoints, true));
+
++        $acsArray = $metadata->getOptionalArray('AttributeConsumingService', []);
++        if (!empty($acsArray)) {
++            $nameFormat = $metadata->getOptionalString('attributes.NameFormat', Constants::NAMEFORMAT_URI);
++            foreach ($acsArray as $service) {
++                $attributeconsumer = new AttributeConsumingService();
++                $attributeconsumer->setIndex($service['index'] ?? 0);
++
++                if (isset($service['isDefault'])) {
++                    $attributeconsumer->setIsDefault($service['isDefault']);
++                }
++
++                if (isset($service['ServiceName'])) {
++                    $attributeconsumer->setServiceName($service['ServiceName']);
++                }
++
++                if (isset($service['ServiceDescription'])) {
++                    $attributeconsumer->setServiceDescription($service['ServiceDescription']);
++                }
++
++                foreach ($service['attributes'] ?? [] as $name => $opts) {
++                    $t = new RequestedAttribute();
++                    $t->setName($name);
++                    if ($nameFormat !== Constants::NAMEFORMAT_UNSPECIFIED) {
++                        $t->setNameFormat($nameFormat);
++                    }
++                    if (is_array($opts) && ($opts['isRequired'] ?? false)) {
++                        $t->setIsRequired(true);
++                    }
++                    $attributeconsumer->addRequestedAttribute($t);
++                }
++
++                $e->addAttributeConsumingService($attributeconsumer);
++            }
++        }
++
+         $this->addAttributeConsumingService($e, $metadata);
+
+         $this->entityDescriptor->addRoleDescriptor($e);
