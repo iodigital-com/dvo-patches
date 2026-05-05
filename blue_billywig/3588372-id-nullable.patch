@@ -1,0 +1,16 @@
+diff --git a/src/Object/MediaClip.php b/src/Object/MediaClip.php
+index 2f7b02f769c0dbd95e9ac6fa94ba737ed900b47a..25006d2dc7f6ecbc2e6a595df6f849ea06b5b2f2 100644
+--- a/src/Object/MediaClip.php
++++ b/src/Object/MediaClip.php
+@@ -31,9 +31,9 @@ class MediaClip {
+   /**
+    * The unique ID of the media clip.
+    *
+-   * @var string
++   * @var string|null
+    */
+-  protected string $id;
++  protected ?string $id;
+ 
+   /**
+    * The title of the media clip.
