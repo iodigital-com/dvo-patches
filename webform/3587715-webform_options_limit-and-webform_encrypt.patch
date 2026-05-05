@@ -1,0 +1,249 @@
+diff --git a/modules/webform_options_limit/src/Plugin/WebformHandler/OptionsLimitWebformHandler.php b/modules/webform_options_limit/src/Plugin/WebformHandler/OptionsLimitWebformHandler.php
+index 1b8fd87f6acd8e9917c3832d2af45aa39539f70c..4450f15f9b13a3b387c91797294c338b90c7978d 100644
+--- a/modules/webform_options_limit/src/Plugin/WebformHandler/OptionsLimitWebformHandler.php
++++ b/modules/webform_options_limit/src/Plugin/WebformHandler/OptionsLimitWebformHandler.php
+@@ -1287,12 +1287,30 @@ class OptionsLimitWebformHandler extends WebformHandlerBase implements WebformOp
+       return [];
+     }
+ 
+-    $query->addExpression('COUNT(value)', 'total');
+-    $query->groupBy('value');
+-    if ($values) {
+-      $query->condition('sd.value', $values, 'IN');
++    $sids = $query->execute();
++    $element_key = $this->configuration['element_key'];
++
++    $option_number = [];
++
++    $submissions = $this->entityTypeManager
++      ->getStorage('webform_submission')
++      ->loadMultiple($sids);
++
++    foreach ($submissions as $submission) {
++      $values = $submission->getElementData($element_key);
++      if (!is_array($values)) {
++        $values = [$values];
++      }
++      foreach ($values as $value) {
++        if (isset($option_number[$value])) {
++          ++$option_number[$value];
++        }
++        else {
++          $option_number[$value] = 1;
++        }
++      }
+     }
+-    return $query->execute()->fetchAllKeyed();
++    return $option_number;
+   }
+ 
+   /**
+@@ -1306,56 +1324,68 @@ class OptionsLimitWebformHandler extends WebformHandlerBase implements WebformOp
+     if (!$query) {
+       return NULL;
+     }
++    $sids = $query->execute();
++    $element_key = $this->configuration['element_key'];
++
++    $boolean_count = 0;
++
++    $submissions = $this->entityTypeManager
++      ->getStorage('webform_submission')
++      ->loadMultiple($sids);
+ 
+-    $query->condition('sd.value', '1');
+-    return $query->countQuery()->execute()->fetchField();
++    foreach ($submissions as $submission) {
++      if ($submission->getElementData($element_key)) {
++        $boolean_count += 1;
++      }
++    }
++    return $boolean_count;
+   }
+ 
+   /**
+    * Get base query for options and boolean limit totals.
+    *
+-   * @return bool|\Drupal\Core\Database\Query\SelectInterface
++   * @return bool|\Drupal\Core\Entity\Query\QueryInterface
+    *   The base query for options and boolean limit totals.
+    */
+   protected function getTotalQuery() {
+     $webform = $this->getWebform();
+ 
+-    /** @var \Drupal\Core\Database\StatementInterface $result */
+-    $query = $this->database->select('webform_submission', 's');
+-    $query->join('webform_submission_data', 'sd', 's.sid = sd.sid');
+-    $query->fields('sd', ['value']);
+-    $query->condition('sd.name', $this->configuration['element_key']);
+-    $query->condition('sd.webform_id', $webform->id());
++    $query = $this->entityTypeManager
++      ->getStorage('webform_submission')
++      ->getQuery()
++      ->accessCheck(FALSE)
++      ->condition('webform_id', $webform->id());
+ 
+     // Limit by source entity.
+     if ($this->configuration['limit_source_entity']) {
+       $source_entity = $this->getSourceEntity();
+       if ($source_entity) {
+-        $query->condition('s.entity_type', $source_entity->getEntityTypeId());
+-        $query->condition('s.entity_id', $source_entity->id());
++        $query->condition('entity_type', $source_entity->getEntityTypeId())
++          ->condition('entity_id', $source_entity->id());
+       }
+       else {
+-        $query->isNull('s.entity_type');
+-        $query->isNull('s.entity_id');
++        $query->condition('entity_type', NULL, 'IS NULL')
++          ->condition('entity_id', NULL, 'IS NULL');
+       }
+     }
+ 
+     // Limit by authenticated or anonymous user.
+     if ($this->configuration['limit_user']) {
+       if ($this->currentUser->isAuthenticated()) {
+-        $query->condition('s.uid', $this->currentUser->id());
++        $query->condition('uid', $this->currentUser->id());
+       }
+       else {
+         $sids = $this->entityTypeManager->getStorage('webform_submission')->getAnonymousSubmissionIds($this->currentUser);
+         if ($sids) {
+-          $query->condition('s.sid', $sids, 'IN');
+-          $query->condition('s.uid', 0);
++          $query->condition('sid', $sids, 'IN');
++          $query->condition('uid', 0);
+         }
+         else {
+           return FALSE;
+         }
+       }
+     }
++
+     return $query;
+   }
+ 
+@@ -1421,6 +1451,8 @@ class OptionsLimitWebformHandler extends WebformHandlerBase implements WebformOp
+           . (!WebformOptionsHelper::hasOptionDescription($label) ? WebformOptionsHelper::DESCRIPTION_DELIMITER : '')
+           . $message;
+     }
++
++    return $label;
+   }
+ 
+ }
+diff --git a/modules/webform_options_limit/tests/src/Functional/WebformOptionsLimitUserTest.php b/modules/webform_options_limit/tests/src/Functional/WebformOptionsLimitUserTest.php
+index dfa738b2ed1516e70298c230727de801170188e2..94f5e96d8b33d842cf1b2d2167ec8d40673f134a 100644
+--- a/modules/webform_options_limit/tests/src/Functional/WebformOptionsLimitUserTest.php
++++ b/modules/webform_options_limit/tests/src/Functional/WebformOptionsLimitUserTest.php
+@@ -4,6 +4,8 @@ namespace Drupal\Tests\webform_options_limit\Functional;
+ 
+ use Drupal\Tests\webform\Functional\WebformBrowserTestBase;
+ use Drupal\webform\Entity\Webform;
++use Drupal\webform\WebformInterface;
++use Drupal\webform\WebformSubmissionStorageInterface;
+ 
+ /**
+  * Webform options limit test.
+@@ -29,6 +31,9 @@ class WebformOptionsLimitUserTest extends WebformBrowserTestBase {
+ 
+     $webform = Webform::load('test_handler_options_limit_user');
+ 
++    /** @var \Drupal\webform\WebformSubmissionStorageInterface $submission_storage */
++    $submission_storage = \Drupal::entityTypeManager()->getStorage('webform_submission');
++
+     // Create authenticated user.
+     $user = $this->drupalCreateUser();
+     $this->drupalLogin($user);
+@@ -41,12 +46,12 @@ class WebformOptionsLimitUserTest extends WebformBrowserTestBase {
+     $assert_session->responseNotContains('options_limit_user is not available.');
+ 
+     // Check that options limit is reached for authenticated user.
+-    $this->postSubmission($webform);
+-    $this->postSubmission($webform);
+-    $this->postSubmission($webform);
++    $this->createSubmissionsForTest($webform, $submission_storage, 4);
++    $this->drupalGet('/webform/test_handler_options_limit_user');
+     $assert_session->responseContains('A [0 remaining]');
+     $assert_session->responseContains('B [0 remaining]');
+     $assert_session->responseContains('C [0 remaining]');
++    $this->postSubmission($webform);
+     $assert_session->responseContains('options_limit_user is not available.');
+ 
+     // Create another authenticated user.
+@@ -61,9 +66,8 @@ class WebformOptionsLimitUserTest extends WebformBrowserTestBase {
+     $assert_session->responseNotContains('options_limit_user is not available.');
+ 
+     // Check that options limit is reached for authenticated user.
+-    $this->postSubmission($webform);
+-    $this->postSubmission($webform);
+-    $this->postSubmission($webform);
++    $this->createSubmissionsForTest($webform, $submission_storage, 9);
++    $this->drupalGet('/webform/test_handler_options_limit_user');
+     $assert_session->responseContains('A [0 remaining]');
+     $assert_session->responseContains('B [0 remaining]');
+     $assert_session->responseContains('C [0 remaining]');
+@@ -71,7 +75,7 @@ class WebformOptionsLimitUserTest extends WebformBrowserTestBase {
+ 
+     // Logout.
+     // NOTE:
+-    // We are are testing anonymous user last because anonymous
++    // We are testing anonymous user last because anonymous
+     // submission are transferred to authenticated users when they login.
+     $this->drupalLogout();
+ 
+@@ -84,12 +88,8 @@ class WebformOptionsLimitUserTest extends WebformBrowserTestBase {
+ 
+     // Check that options limit is reached for anonymous user.
+     $this->postSubmission($webform);
+-    $this->postSubmission($webform);
+-    $this->postSubmission($webform);
++    $this->drupalGet('/webform/test_handler_options_limit_user');
+     $assert_session->responseContains('A [0 remaining]');
+-    $assert_session->responseContains('B [0 remaining]');
+-    $assert_session->responseContains('C [0 remaining]');
+-    $assert_session->responseContains('options_limit_user is not available.');
+ 
+     // Check that Options limit report is not available.
+     $this->drupalLogin($this->rootUser);
+@@ -97,4 +97,40 @@ class WebformOptionsLimitUserTest extends WebformBrowserTestBase {
+     $assert_session->statusCodeEquals(403);
+   }
+ 
++  /**
++   * Function creates some submissions.
++   *
++   * @param \Drupal\webform\WebformInterface $webform
++   *   The webform.
++   * @param \Drupal\webform\WebformSubmissionStorageInterface $submission_storage
++   *   The submission storage.
++   * @param int $expected_number_of_submissions
++   *   The number of expected submissions after this functions.
++   *
++   * @return void
++   */
++  private function createSubmissionsForTest(WebformInterface $webform, WebformSubmissionStorageInterface $submission_storage, int $expected_number_of_submissions): void {
++    $data['options_limit_user'] = ['A', 'B', 'C'];
++    $submission_storage->create([
++      'webform_id' => $webform->id(),
++      'data' => $data,
++    ])->save();
++    $data['options_limit_user'] = ['B', 'C'];
++    $submission_storage->create([
++      'webform_id' => $webform->id(),
++      'data' => $data,
++    ])->save();
++    $data['options_limit_user'] = ['C'];
++    $submission_storage->create([
++      'webform_id' => $webform->id(),
++      'data' => $data,
++    ])->save();
++    $data['options_limit_user'] = [];
++    $submission_storage->create([
++      'webform_id' => $webform->id(),
++      'data' => $data,
++    ])->save();
++    $this->assertEquals($submission_storage->getTotal($webform), $expected_number_of_submissions);
++  }
++
+ }
