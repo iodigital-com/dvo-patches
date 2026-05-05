@@ -1,0 +1,202 @@
+diff --git a/menu_admin_per_menu.services.yml b/menu_admin_per_menu.services.yml
+index 6cfd2cbf06b46d35158f33e28ebbbc7ad87ec354..c1e9e412537083fa13edbce596b48208ec17d65d 100644
+--- a/menu_admin_per_menu.services.yml
++++ b/menu_admin_per_menu.services.yml
+@@ -7,3 +7,9 @@ services:
+   menu_admin_per_menu.allowed_menus:
+     class: Drupal\menu_admin_per_menu\Access\MenuAdminPerMenuAccess
+     arguments: ['@module_handler']
++  menu_admin_per_menu.route_access:
++    class: Drupal\menu_admin_per_menu\Access\MenuAdminPerMenuRouteAccess
++    arguments:
++      - '@menu_admin_per_menu.allowed_menus'
++      - '@access_manager.check_provider'
++      - '@access_arguments_resolver_factory'
+diff --git a/src/Access/MenuAdminPerMenuRouteAccess.php b/src/Access/MenuAdminPerMenuRouteAccess.php
+new file mode 100644
+index 0000000000000000000000000000000000000000..d47c08e99ba665825a72148998423153314884b7
+--- /dev/null
++++ b/src/Access/MenuAdminPerMenuRouteAccess.php
+@@ -0,0 +1,144 @@
++<?php
++
++namespace Drupal\menu_admin_per_menu\Access;
++
++use Drupal\Core\Access\AccessArgumentsResolverFactoryInterface;
++use Drupal\Core\Access\AccessResult;
++use Drupal\Core\Access\AccessResultInterface;
++use Drupal\Core\Access\CheckProviderInterface;
++use Drupal\Core\Menu\MenuLinkInterface;
++use Drupal\Core\Routing\RouteMatchInterface;
++use Drupal\Core\Session\AccountInterface;
++use Drupal\menu_admin_per_menu\MenuAdminPerMenuAccessInterface;
++use Drupal\menu_link_content\Entity\MenuLinkContent;
++use Drupal\system\Entity\Menu;
++use Symfony\Component\HttpFoundation\Request;
++
++/**
++ * Combines existing route access checks with menu admin per menu access.
++ */
++class MenuAdminPerMenuRouteAccess {
++
++  /**
++   * The menu admin per menu access service.
++   *
++   * @var \Drupal\menu_admin_per_menu\MenuAdminPerMenuAccessInterface
++   */
++  protected $menuAdminPerMenuAccess;
++
++  /**
++   * The check provider.
++   *
++   * @var \Drupal\Core\Access\CheckProviderInterface
++   */
++  protected $checkProvider;
++
++  /**
++   * The access arguments resolver factory.
++   *
++   * @var \Drupal\Core\Access\AccessArgumentsResolverFactoryInterface
++   */
++  protected $accessArgumentsResolverFactory;
++
++  /**
++   * Constructs a new MenuAdminPerMenuRouteAccess object.
++   *
++   * @param \Drupal\menu_admin_per_menu\MenuAdminPerMenuAccessInterface $menu_admin_per_menu_access
++   *   The menu admin per menu access service.
++   * @param \Drupal\Core\Access\CheckProviderInterface $check_provider
++   *   The check provider.
++   * @param \Drupal\Core\Access\AccessArgumentsResolverFactoryInterface $access_arguments_resolver_factory
++   *   The access arguments resolver factory.
++   */
++  public function __construct(
++    MenuAdminPerMenuAccessInterface $menu_admin_per_menu_access,
++    CheckProviderInterface $check_provider,
++    AccessArgumentsResolverFactoryInterface $access_arguments_resolver_factory
++  ) {
++    $this->menuAdminPerMenuAccess = $menu_admin_per_menu_access;
++    $this->checkProvider = $check_provider;
++    $this->accessArgumentsResolverFactory = $access_arguments_resolver_factory;
++  }
++
++  /**
++   * {@inheritdoc}
++   */
++  public function menusOverviewAccess(RouteMatchInterface $routeMatch, AccountInterface $account, ?Request $request = NULL) {
++    return $this->menuAdminPerMenuAccess->menusOverviewAccess($account)
++      ->orIf($this->originalRequirementsAccess($routeMatch, $account, $request));
++  }
++
++  /**
++   * {@inheritdoc}
++   */
++  public function menuAccess(RouteMatchInterface $routeMatch, AccountInterface $account, Menu $menu, ?Request $request = NULL) {
++    return $this->menuAdminPerMenuAccess->menuAccess($account, $menu)
++      ->orIf($this->originalRequirementsAccess($routeMatch, $account, $request));
++  }
++
++  /**
++   * {@inheritdoc}
++   */
++  public function menuItemAccess(RouteMatchInterface $routeMatch, AccountInterface $account, ?Request $request = NULL, MenuLinkContent $menu_link_content = NULL) {
++    return $this->menuAdminPerMenuAccess->menuItemAccess($account, $menu_link_content)
++      ->orIf($this->originalRequirementsAccess($routeMatch, $account, $request));
++  }
++
++  /**
++   * {@inheritdoc}
++   */
++  public function menuLinkAccess(RouteMatchInterface $routeMatch, AccountInterface $account, ?Request $request = NULL, MenuLinkInterface $menu_link_plugin = NULL) {
++    return $this->menuAdminPerMenuAccess->menuLinkAccess($account, $menu_link_plugin)
++      ->orIf($this->originalRequirementsAccess($routeMatch, $account, $request));
++  }
++
++  /**
++   * Checks the original requirements of the route.
++   *
++   * @param \Drupal\Core\Routing\RouteMatchInterface $routeMatch
++   *   The route match.
++   * @param \Drupal\Core\Session\AccountInterface $account
++   *   The account.
++   * @param \Symfony\Component\HttpFoundation\Request|null $request
++   *   The request.
++   *
++   * @return \Drupal\Core\Access\AccessResultInterface
++   *   The access result.
++   */
++  protected function originalRequirementsAccess(RouteMatchInterface $routeMatch, AccountInterface $account, ?Request $request = NULL): AccessResultInterface {
++    // Restore the original requirements.
++    $route = $routeMatch->getRouteObject();
++    $originalRequirements = $route->getRequirements();
++    $requirements = $route->getOption('_original_requirements');
++    $route = $route->setRequirements($requirements);
++
++    // Perform the original access checks.
++    $accessCheckMap = [
++      '_entity_access' => 'access_check.entity',
++      '_entity_create_access' => 'access_check.entity_create',
++      '_access_content_translation_manage' => 'content_translation.manage_access',
++      '_custom_access' => 'access_check.custom',
++    ];
++
++    $argumentsResolver = $this->accessArgumentsResolverFactory->getArgumentsResolver($routeMatch, $account, $request);
++    $result = AccessResult::allowed();
++
++    foreach ($accessCheckMap as $appliesTo => $serviceId) {
++      if (isset($requirements[$appliesTo])) {
++        $callable = $this->checkProvider->loadCheck($serviceId);
++        $arguments = $argumentsResolver->getArguments($callable);
++
++        $serviceResult = call_user_func_array($callable, $arguments);
++        if ($serviceResult instanceof AccessResultInterface) {
++          $result = $result->andIf($serviceResult);
++        }
++      }
++    }
++
++    // Restore the actual requirements.
++    $route->setRequirements($originalRequirements);
++
++    return $result;
++  }
++
++}
+diff --git a/src/Routing/RouteSubscriber.php b/src/Routing/RouteSubscriber.php
+index 864f8765b82e9a8c3b0993338854b9311ef8f4bf..3f2e5cc4af09364e2430436a7403e3b5b9500450 100644
+--- a/src/Routing/RouteSubscriber.php
++++ b/src/Routing/RouteSubscriber.php
+@@ -23,17 +23,20 @@ class RouteSubscriber extends RouteSubscriberBase {
+             '_title' => $route->getDefault('_title'),
+             '_controller' => '\Drupal\menu_admin_per_menu\Controller\MenuAdminPerMenuController::menuOverviewPage',
+           ]);
+-          $route->setRequirements(['_custom_access' => '\Drupal\menu_admin_per_menu\Access\MenuAdminPerMenuAccess::menusOverviewAccess']);
++          $route->setOption('_original_requirements', $route->getRequirements());
++          $route->setRequirements(['_custom_access' => 'menu_admin_per_menu.route_access:menusOverviewAccess']);
+           break;
+ 
+         case 'entity.menu.edit_form':
+         case 'entity.menu.add_link_form':
+-          $route->setRequirements(['_custom_access' => '\Drupal\menu_admin_per_menu\Access\MenuAdminPerMenuAccess::menuAccess']);
++          $route->setOption('_original_requirements', $route->getRequirements());
++          $route->setRequirements(['_custom_access' => 'menu_admin_per_menu.route_access:menuAccess']);
+           break;
+ 
+         case 'menu_ui.link_edit':
+         case 'menu_ui.link_reset':
+-          $route->setRequirements(['_custom_access' => '\Drupal\menu_admin_per_menu\Access\MenuAdminPerMenuAccess::menuLinkAccess']);
++          $route->setOption('_original_requirements', $route->getRequirements());
++          $route->setRequirements(['_custom_access' => 'menu_admin_per_menu.route_access:menuLinkAccess']);
+           break;
+ 
+         case 'entity.menu_link_content.canonical':
+@@ -42,7 +45,8 @@ class RouteSubscriber extends RouteSubscriberBase {
+         case 'entity.menu_link_content.content_translation_add':
+         case 'entity.menu_link_content.content_translation_edit':
+         case 'entity.menu_link_content.content_translation_delete':
+-          $route->setRequirements(['_custom_access' => '\Drupal\menu_admin_per_menu\Access\MenuAdminPerMenuAccess::menuItemAccess']);
++          $route->setOption('_original_requirements', $route->getRequirements());
++          $route->setRequirements(['_custom_access' => 'menu_admin_per_menu.route_access:menuItemAccess']);
+           break;
+ 
+       }
