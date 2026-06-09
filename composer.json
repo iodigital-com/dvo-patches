@@ -1,0 +1,19 @@
+{
+    "name": "iodigital-com/dvo-patches",
+    "description": "Patches for the DvO distribution, with a fallback patch-command patcher for cweagans/composer-patches 2.x.",
+    "type": "composer-plugin",
+    "license": "proprietary",
+    "require": {
+        "php": ">=8.1",
+        "composer-plugin-api": "^2.0",
+        "cweagans/composer-patches": "^2.0"
+    },
+    "autoload": {
+        "psr-4": {
+            "IoDigital\\DvoPatches\\": "src/"
+        }
+    },
+    "extra": {
+        "class": "IoDigital\\DvoPatches\\Plugin"
+    }
+}
