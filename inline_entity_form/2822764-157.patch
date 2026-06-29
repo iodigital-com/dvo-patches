@@ -1,0 +1,419 @@
+diff --git a/config/schema/inline_entity_form.schema.yml b/config/schema/inline_entity_form.schema.yml
+index 2d7a8f2..11f96b9 100644
+--- a/config/schema/inline_entity_form.schema.yml
++++ b/config/schema/inline_entity_form.schema.yml
+@@ -66,6 +66,9 @@ field.widget.settings.inline_entity_form_complex:
+     allow_duplicate:
+       type: boolean
+       label: "Allow duplicate"
++    allow_asymmetric_translation:
++     type: boolean
++     label: "Allow asymmetric translation"
+     collapsible:
+       type: boolean
+       label: "Collapsible"
+diff --git a/src/Element/InlineEntityForm.php b/src/Element/InlineEntityForm.php
+index 74a7142..7adac71 100644
+--- a/src/Element/InlineEntityForm.php
++++ b/src/Element/InlineEntityForm.php
+@@ -132,7 +132,6 @@ class InlineEntityForm extends RenderElement {
+     }
+     // Prepare the entity form and the entity itself for translating.
+     $entity_form['#entity'] = TranslationHelper::prepareEntity($entity_form['#entity'], $form_state);
+-    $entity_form['#translating'] = TranslationHelper::isTranslating($form_state) && $entity_form['#entity']->isTranslatable();
+
+     // Handle revisioning if the entity supports it.
+     if ($entity_type->isRevisionable() && $entity_form['#revision']) {
+diff --git a/src/Form/EntityInlineForm.php b/src/Form/EntityInlineForm.php
+index 32e2aaa..43dd63f 100644
+--- a/src/Form/EntityInlineForm.php
++++ b/src/Form/EntityInlineForm.php
+@@ -13,6 +13,7 @@ use Drupal\Core\Extension\ModuleHandlerInterface;
+ use Drupal\Core\Field\Plugin\Field\FieldType\EntityReferenceItem;
+ use Drupal\Core\Field\WidgetBase;
+ use Drupal\Core\Form\FormStateInterface;
++use Drupal\Core\Language\LanguageManagerInterface;
+ use Drupal\Core\Render\Element;
+ use Drupal\Core\StringTranslation\StringTranslationTrait;
+ use Drupal\Core\Theme\ThemeManagerInterface;
+@@ -62,6 +63,13 @@ class EntityInlineForm implements InlineFormInterface {
+    */
+   protected $themeManager;
+
++  /**
++   * LanguageManager service.
++   *
++   * @var \Drupal\Core\Language\LanguageManagerInterface
++   */
++  protected $languageManager;
++
+   /**
+    * Constructs the inline entity form controller.
+    *
+@@ -75,13 +83,16 @@ class EntityInlineForm implements InlineFormInterface {
+    *   The entity type.
+    * @param \Drupal\Core\Theme\ThemeManagerInterface $theme_manager
+    *   The theme manager.
++   * @param \Drupal\Core\Language\LanguageManagerInterface $language_manager
++   *   The language manager.
+    */
+-  public function __construct(EntityFieldManagerInterface $entity_field_manager, EntityTypeManagerInterface $entity_type_manager, ModuleHandlerInterface $module_handler, EntityTypeInterface $entity_type, ThemeManagerInterface $theme_manager) {
++  public function __construct(EntityFieldManagerInterface $entity_field_manager, EntityTypeManagerInterface $entity_type_manager, ModuleHandlerInterface $module_handler, EntityTypeInterface $entity_type, ThemeManagerInterface $theme_manager, LanguageManagerInterface $language_manager) {
+     $this->entityFieldManager = $entity_field_manager;
+     $this->entityTypeManager = $entity_type_manager;
+     $this->moduleHandler = $module_handler;
+     $this->entityType = $entity_type;
+     $this->themeManager = $theme_manager;
++    $this->languageManager = $language_manager;
+   }
+
+   /**
+@@ -93,7 +104,8 @@ class EntityInlineForm implements InlineFormInterface {
+       $container->get('entity_type.manager'),
+       $container->get('module_handler'),
+       $entity_type,
+-      $container->get('theme.manager')
++      $container->get('theme.manager'),
++      $container->get('language_manager')
+     );
+   }
+
+@@ -316,6 +328,42 @@ class EntityInlineForm implements InlineFormInterface {
+    * {@inheritdoc}
+    */
+   public function delete($ids, $context) {
++  /** @var \Drupal\Core\Entity\ContentEntityInterface $parent_entity */
++    $parent_entity = $context['parent_entity'];
++    // For translatable entities we want to make sure that entity being deleted
++    // is not referenced from other translations of the parent entity.
++    if ($parent_entity->isTranslatable()) {
++      $parent_storage = $this->entityTypeManager->getStorage($parent_entity->getEntityTypeId());
++      $all_languages = $this->languageManager->getLanguages();
++
++      $can_be_deleted = [];
++      foreach ($ids as $id) {
++        $found_in_translation = [];
++        foreach ($all_languages as $language) {
++          // Must query one language at a time due to core bug.
++          // See https://www.drupal.org/project/drupal/issues/3093117
++          if ($parent_entity->language()->getId() !== $language->getId()) {
++            $parent_query = $parent_storage->getQuery();
++            if ($parent_entity->getEntityType()->isRevisionable()) {
++              $parent_query->allRevisions();
++            }
++            $parent_query
++              ->condition($parent_entity->getEntityType()->getKey('id'), $parent_entity->id(), '=')
++              ->condition($context['field_instance']->getName(), $id, '=', $language->getId());
++            $result = $parent_query->execute();
++            if (!empty($result)) {
++              $found_in_translation[] = $language->getId();
++              break;
++            }
++          }
++        }
++        if (empty($found_in_translation)) {
++          $can_be_deleted[] = $id;
++        }
++      }
++      $ids = $can_be_deleted;
++    }
++
+     $storage_handler = $this->entityTypeManager->getStorage($this->entityType->id());
+     $entities = $storage_handler->loadMultiple($ids);
+     $storage_handler->delete($entities);
+diff --git a/src/Plugin/Field/FieldWidget/InlineEntityFormBase.php b/src/Plugin/Field/FieldWidget/InlineEntityFormBase.php
+index 69869be..143ac37 100644
+--- a/src/Plugin/Field/FieldWidget/InlineEntityFormBase.php
++++ b/src/Plugin/Field/FieldWidget/InlineEntityFormBase.php
+@@ -321,6 +321,10 @@ abstract class InlineEntityFormBase extends WidgetBase implements ContainerFacto
+       $summary[] = $this->getSetting('collapsed') ? $this->t('Collapsible, collapsed by default') : $this->t('Collapsible');
+     }
+
++     if ($this->getSetting('allow_asymmetric_translation')) {
++      $summary[] = $this->t('Can have asymmetric translations.');
++    }
++
+     return $summary;
+   }
+
+@@ -385,12 +389,13 @@ abstract class InlineEntityFormBase extends WidgetBase implements ContainerFacto
+         'instance' => $this->fieldDefinition,
+         'form' => NULL,
+         'delete' => [],
++        'parent_entity' => $items->getParent()->getEntity(),
+         'entities' => [],
+       ];
+       // Store the $items entities in the widget state, for further
+       // manipulation.
+       foreach ($items->referencedEntities() as $delta => $entity) {
+-        // Display the entity in the correct translation.
++        // Always display the entity in the correct translation.
+         if ($translating) {
+           $entity = TranslationHelper::prepareEntity($entity, $form_state);
+         }
+@@ -522,9 +527,14 @@ abstract class InlineEntityFormBase extends WidgetBase implements ContainerFacto
+    */
+   public static function submitSaveEntity(array $entity_form, FormStateInterface $form_state) {
+     $ief_id = $entity_form['#ief_id'];
+-    /** @var \Drupal\Core\Entity\EntityInterface $entity */
++    /** @var \Drupal\Core\Entity\ContentEntityInterface $entity */
+     $entity = $entity_form['#entity'];
+-
++    // The host langcode might have changed in the meanwhile as it uses an
++    // entity builder.
++    // @see \Drupal\Core\Entity\ContentEntityForm::form()
++    // @see \Drupal\Core\Entity\ContentEntityForm::updateFormLangcode()
++    $entity = TranslationHelper::prepareEntity($entity, $form_state);
++
+     if (in_array($entity_form['#op'], ['add', 'duplicate'])) {
+       // Determine the correct weight of the new element.
+       $weight = 0;
+diff --git a/src/Plugin/Field/FieldWidget/InlineEntityFormComplex.php b/src/Plugin/Field/FieldWidget/InlineEntityFormComplex.php
+index e7212fb..8d5ea50 100644
+--- a/src/Plugin/Field/FieldWidget/InlineEntityFormComplex.php
++++ b/src/Plugin/Field/FieldWidget/InlineEntityFormComplex.php
+@@ -122,6 +122,7 @@ class InlineEntityFormComplex extends InlineEntityFormBase implements ContainerF
+       'removed_reference' => self::REMOVED_OPTIONAL,
+       'match_operator' => 'CONTAINS',
+       'allow_duplicate' => FALSE,
++      'allow_asymmetric_translation' => FALSE,
+     ];
+
+     return $defaults;
+@@ -176,6 +177,14 @@ class InlineEntityFormComplex extends InlineEntityFormBase implements ContainerF
+       '#options' => $this->getRemovedReferenceOptions(),
+       '#description' => $description,
+     ];
++    // Allow setting only for translatable fields.
++    if ($this->fieldDefinition->isTranslatable()) {
++      $element['allow_asymmetric_translation'] = [
++        '#type' => 'checkbox',
++        '#title' => $this->t('Allow user to make asymmetric translation'),
++        '#default_value' => $this->getSetting('allow_asymmetric_translation'),
++      ];
++    }
+
+     return $element;
+   }
+@@ -289,7 +298,7 @@ class InlineEntityFormComplex extends InlineEntityFormBase implements ContainerF
+       '#suffix' => '</div>',
+       '#ief_id' => $this->getIefId(),
+       '#ief_root' => TRUE,
+-      '#translating' => $this->isTranslating($form_state),
++      '#allow_asymmetric_translation' => $this->getSetting('allow_asymmetric_translation') || !$this->isTranslating($form_state),
+       '#field_title' => $this->fieldDefinition->getLabel(),
+       '#after_build' => [
+         [get_class($this), 'removeTranslatabilityClue'],
+@@ -300,7 +309,7 @@ class InlineEntityFormComplex extends InlineEntityFormBase implements ContainerF
+       $element['#open'] = $form_state->getUserInput() ?: !$this->getSetting('collapsed');
+     }
+
+-    $this->prepareFormState($form_state, $items, $element['#translating']);
++    $this->prepareFormState($form_state, $items, $element['#allow_asymmetric_translation']);
+     $entities = $form_state->get([
+       'inline_entity_form', $this->getIefId(),
+       'entities',
+@@ -373,13 +382,19 @@ class InlineEntityFormComplex extends InlineEntityFormBase implements ContainerF
+     $element['entities']['#table_fields'] = $fields;
+
+     $weight_delta = max(ceil($entities_count * 1.2), 50);
++    $form_langcode = $form_state->get('langcode');
+     foreach ($entities as $key => $value) {
+       // Data used by inline-entity-form-entity-table.html.twig.
+       // @see template_preprocess_inline_entity_form_entity_table()
+       /** @var \Drupal\Core\Entity\EntityInterface $entity */
+       $entity = $value['entity'];
+-      $element['entities'][$key]['#label'] = $this->inlineFormHandler->getEntityLabel($value['entity']);
+-      $element['entities'][$key]['#entity'] = $value['entity'];
++      $entity_langcode = $entity->language()->getId();
++      if ($entity_langcode != $form_langcode && $entity->hasTranslation($form_langcode)) {
++        // Switch to the needed translation.
++        $entity = $entity->getTranslation($form_langcode);
++      }
++      $element['entities'][$key]['#label'] = $this->inlineFormHandler->getEntityLabel($entity);
++      $element['entities'][$key]['#entity'] = $entity;
+       $element['entities'][$key]['#needs_save'] = $value['needs_save'];
+
+       // Handle row weights.
+@@ -520,15 +535,16 @@ class InlineEntityFormComplex extends InlineEntityFormBase implements ContainerF
+             '#ief_row_delta' => $key,
+             '#ief_row_form' => 'remove',
+             // It's OK to set #access when creating the whole element.
+-            '#access' => !$element['#translating'],
++            '#access' => $element['#allow_asymmetric_translation'],
+           ];
+         }
+       }
+     }
+
+-    // When in translation, the widget only supports editing (translating)
++    // When in symmetric translation mode,
++    // the widget only supports editing (translating)
+     // already added entities, so there's no need to show the rest.
+-    if ($element['#translating']) {
++    if (!$element['#allow_asymmetric_translation']) {
+       if (empty($entities)) {
+         // There are no entities available for translation, hide the widget.
+         // Safely restrict access. Entity cacheability already set.
+@@ -715,6 +731,28 @@ class InlineEntityFormComplex extends InlineEntityFormBase implements ContainerF
+       return;
+     }
+     $triggering_element = $form_state->getTriggeringElement();
++
++    // The form might be sent for processing in order to process changing
++    // langcode.
++    // The language code in the form state gets updated only after the main
++    // entity was already fully built, meaning that in the first iteration
++    // we will get the previous language code unless we read it ourselves.
++    $main_entity = $form_state->getFormObject()->getEntity();
++    $main_entity_langcode_key = $main_entity->getEntityType()->getKey('langcode');
++    if ($main_entity_langcode_key) {
++      $langcode = $form_state->getValue([$main_entity_langcode_key, 0, 'value']);
++      if ($langcode && ($form_state->get('langcode') !== $langcode)) {
++        $entities = [];
++        foreach ($items as $item) {
++          $entities[] = TranslationHelper::prepareEntity($item->entity, $form_state, $langcode);
++        }
++        if (!empty($entities)) {
++          $ief_entities_language_update = $form_state->get('ief_entities_language_update');
++          $ief_entities_language_update[] = $entities;
++          $form_state->set('ief_entities_language_update', $ief_entities_language_update);
++        }
++      }
++    }
+     if (empty($triggering_element['#ief_submit_trigger'])) {
+       return;
+     }
+@@ -725,8 +763,8 @@ class InlineEntityFormComplex extends InlineEntityFormBase implements ContainerF
+     $this->setIefId($ief_id);
+     $widget_state = &$form_state->get(['inline_entity_form', $ief_id]);
+     foreach ($widget_state['entities'] as $key => $value) {
+-      $changed = TranslationHelper::updateEntityLangcode($value['entity'], $form_state);
+-      if ($changed) {
++      $value['entity'] = TranslationHelper::prepareEntity($value['entity'], $form_state);
++      if ($value['entity']->isTranslatable() && $value['entity']->isNewTranslation()) {
+         $widget_state['entities'][$key]['entity'] = $value['entity'];
+         $widget_state['entities'][$key]['needs_save'] = TRUE;
+       }
+diff --git a/src/Plugin/Field/FieldWidget/InlineEntityFormSimple.php b/src/Plugin/Field/FieldWidget/InlineEntityFormSimple.php
+index 42fa2f5..21c4382 100644
+--- a/src/Plugin/Field/FieldWidget/InlineEntityFormSimple.php
++++ b/src/Plugin/Field/FieldWidget/InlineEntityFormSimple.php
+@@ -167,7 +167,7 @@ class InlineEntityFormSimple extends InlineEntityFormBase {
+       'entities' => [],
+     ];
+     foreach ($items as $delta => $value) {
+-      TranslationHelper::updateEntityLangcode($value->entity, $form_state);
++      $value->entity = TranslationHelper::prepareEntity($value->entity, $form_state);
+       $widget_state['entities'][$delta] = [
+         'entity' => $value->entity,
+         'needs_save' => TRUE,
+diff --git a/src/WidgetSubmit.php b/src/WidgetSubmit.php
+index 966ceff..e8994d7 100644
+--- a/src/WidgetSubmit.php
++++ b/src/WidgetSubmit.php
+@@ -21,12 +21,73 @@ class WidgetSubmit {
+    *   The form.
+    * @param \Drupal\Core\Form\FormStateInterface $form_state
+    *   The form state.
++   * @param bool $translation_submit
++   *    (optional) A translation submit for the case where the main entity
++   *    changes its language code but the widget is not active.
+    */
+-  public static function attach(array &$form, FormStateInterface $form_state) {
+-    // $form['#ief_element_submit'] runs after the #ief_element_submit
+-    // callbacks of all subelements, which means that doSubmit() has
+-    // access to the final IEF $form_state.
+-    $form['#ief_element_submit'][] = [get_called_class(), 'doSubmit'];
++  public static function attach(array &$form, FormStateInterface $form_state, bool $translation_submit = FALSE) {
++    if ($translation_submit) {
++      // Entity form actions.
++      foreach (['submit', 'publish', 'unpublish'] as $action) {
++        if (!empty($form['actions'][$action])) {
++          self::addTranslationSubmit($form['actions'][$action], $form);
++        }
++      }
++      // Generic submit button.
++      if (!empty($form['submit'])) {
++        self::addTranslationSubmit($form['submit'], $form);
++      }
++    }
++    else {
++      // $form['#ief_element_submit'] runs after the #ief_element_submit
++      // callbacks of all subelements, which means that doSubmit() has
++      // access to the final IEF $form_state.
++      $form['#ief_element_submit'][] = [get_called_class(), 'doSubmit'];
++    }
++  }
++
++  /**
++   * Adds the translation submit handler to the given submit element.
++   *
++   * @param array $element
++   *   The submit element.
++   * @param array $complete_form
++   *   The complete form.
++   */
++  public static function addTranslationSubmit(array &$element, array $complete_form) {
++    if (empty($element['#submit'])) {
++      // Drupal runs either the button-level callbacks or the form-level ones.
++      // Having no button-level callbacks indicates that the form has relied
++      // on form-level callbacks, which now need to be transferred.
++      $element['#submit'] = $complete_form['#submit'];
++    }
++    $element['#submit'] = array_merge(
++      [[get_called_class(), 'doTranslationSubmit']],
++      $element['#submit']
++    );
++  }
++
++  /**
++   * Saves entities as part of a translation submit.
++   *
++   * @param array $form
++   *   The form.
++   * @param \Drupal\Core\Form\FormStateInterface $form_state
++   *   The form state.
++   */
++  public static function doTranslationSubmit(array $form, FormStateInterface $form_state) {
++    $entities = $form_state->get('ief_entities_language_update') ?? [];
++    if (!empty($entities)) {
++      $referenceUpgrader = new ReferenceUpgrader();
++      foreach ($entities as $entity_group) {
++        foreach ($entity_group as $entity) {
++          $handler = InlineEntityForm::getInlineFormHandler($entity->getEntityTypeId());
++          $referenceUpgrader->upgradeEntityReferences($entity);
++          $handler->save($entity);
++          $referenceUpgrader->registerEntity($entity);
++        }
++      }
++    }
+   }
+
+   /**
+diff --git a/tests/src/FunctionalJavascript/TranslationTest.php b/tests/src/FunctionalJavascript/TranslationTest.php
+index 3bc4421..f6501b0 100644
+--- a/tests/src/FunctionalJavascript/TranslationTest.php
++++ b/tests/src/FunctionalJavascript/TranslationTest.php
+@@ -165,7 +165,20 @@ class TranslationTest extends InlineEntityFormTestBase {
+     $this->assertSame('Damien', $first_translation->first_name->value);
+     $second_translation = $second_inline_node->getTranslation('fr');
+     $this->assertEquals('tous les animaux qui sautent', $second_translation->title->value);
+-    $this->assertSame('Jacques', $second_translation->first_name->value);
++
++    // Allow asymmetric translation.
++    $form_display_storage = $this->container->get('entity_type.manager')->getStorage('entity_form_display');
++    /** @var \Drupal\Core\Entity\Display\EntityFormDisplayInterface $display */
++    $display = $form_display_storage->load('node.ief_test_complex.default');
++    $component = $display->getComponent('multi');
++    $component['settings']['allow_asymmetric_translation'] = TRUE;
++    $display->setComponent('multi', $component)->save();
++    // Get edit form for new node with French translation.
++    $this->drupalGet('fr/node/' . $node->id() . '/edit');
++    // Confirm that the add and remove buttons are present with enabled
++    // 'allow_asymmetric_translation' setting.
++    $this->assertTrue((bool) $this->xpath('//input[@type="submit" and @value="Add new node" and @data-drupal-selector="edit-multi-actions-ief-add"]'), 'Add new node button appear in the table.');
++    $this->assertTrue((bool) $this->xpath('//input[@type="submit" and @value="Remove"]'), 'Remove button appear in the table.');
+   }
+
+ }
