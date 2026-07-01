@@ -1,0 +1,26 @@
+diff --git a/core/lib/Drupal/Core/Form/FormElementHelper.php b/core/lib/Drupal/Core/Form/FormElementHelper.php
+index a121127b142..2bfd1e8da08 100644
+--- a/core/lib/Drupal/Core/Form/FormElementHelper.php
++++ b/core/lib/Drupal/Core/Form/FormElementHelper.php
+@@ -23,7 +23,7 @@ class FormElementHelper {
+    */
+   public static function getElementByName($name, array $form) {
+     foreach (Element::children($form) as $key) {
+-      if (implode('][', $form[$key]['#parents']) === $name) {
++      if (array_key_exists('#parents', $form[$key]) && is_array($form[$key]['#parents']) && implode('][', $form[$key]['#parents']) === $name) {
+         return $form[$key];
+       }
+       elseif ($element = static::getElementByName($name, $form[$key])) {
+diff --git a/core/lib/Drupal/Core/Form/FormState.php b/core/lib/Drupal/Core/Form/FormState.php
+index 4a9b3b08b0b..ad7c55829ac 100644
+--- a/core/lib/Drupal/Core/Form/FormState.php
++++ b/core/lib/Drupal/Core/Form/FormState.php
+@@ -1171,7 +1171,7 @@ public function clearErrors() {
+    * {@inheritdoc}
+    */
+   public function getError(array $element) {
+-    if ($errors = $this->getErrors()) {
++    if (!empty($element['#parents']) && $errors = $this->getErrors()) {
+       $parents = [];
+       foreach ($element['#parents'] as $parent) {
+         $parents[] = $parent;
