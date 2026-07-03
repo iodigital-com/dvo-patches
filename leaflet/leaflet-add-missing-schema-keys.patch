@@ -1,0 +1,35 @@
+--- config/schema/leaflet.schema.yml.orig	2026-07-03 07:47:17
++++ config/schema/leaflet.schema.yml	2026-07-03 07:48:16
+@@ -338,6 +338,12 @@
+         options:
+           type: text
+           label: 'Popup Options'
++        value:
++          type: string
++          label: 'Popup Value'
++        view_mode:
++          type: string
++          label: 'View Mode'
+     map_position:
+       type: mapping
+       label: 'Map Position'
+@@ -461,6 +467,9 @@
+         include_path:
+           type: boolean
+           label: 'Enable Markeclustering of Paths elements'
++        excluded:
++          type: boolean
++          label: 'Excluded from markercluster'
+     fullscreen:
+       type: mapping
+       label: 'Leaflet Fullscreen'
+@@ -492,6 +501,9 @@
+           type: mapping
+           label: 'Geocoder settings'
+           mapping:
++            set_marker:
++              type: boolean
++              label: 'Set marker'
+             popup:
+               type: boolean
+               label: 'Popup'
