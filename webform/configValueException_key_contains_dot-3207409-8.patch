@@ -1,0 +1,50 @@
+diff --git a/modules/webform_options_limit/src/Plugin/WebformHandler/OptionsLimitWebformHandler.php b/modules/webform_options_limit/src/Plugin/WebformHandler/OptionsLimitWebformHandler.php
+index 6c73b14bc..f8dbb4bd7 100644
+--- a/modules/webform_options_limit/src/Plugin/WebformHandler/OptionsLimitWebformHandler.php
++++ b/modules/webform_options_limit/src/Plugin/WebformHandler/OptionsLimitWebformHandler.php
+@@ -249,7 +249,7 @@ class OptionsLimitWebformHandler extends WebformHandlerBase implements WebformOp
+           '#destination__min' => 0,
+           '#destination__title' => $this->t('Limit'),
+           '#destination__description' => NULL,
+-          '#default_value' => $this->configuration['limits'],
++          '#default_value' => WebformOptionsHelper::decodeConfig($this->configuration['limits']),
+           '#filter' => FALSE,
+         ];
+       }
+@@ -440,13 +440,15 @@ class OptionsLimitWebformHandler extends WebformHandlerBase implements WebformOp
+   public function submitConfigurationForm(array &$form, FormStateInterface $form_state) {
+     parent::submitConfigurationForm($form, $form_state);
+     $this->applyFormStateToConfiguration($form_state);
++    $this->configuration['limits'] = WebformOptionsHelper::encodeConfig($this->configuration['limits']);
+ 
+     foreach ($this->configuration['limits'] as $key => $value) {
+-      if ($value === '') {
++      if ($value['text'] === '') {
+         unset($this->configuration['limits'][$key]);
+       }
+       else {
+-        $this->configuration['limits'][$key] = (int) $value;
++        $value['text'] = (int) $value['text'];
++        $this->configuration['limits'][$key] = $value;
+       }
+     }
+     if ($this->isOptionsElement()) {
+@@ -1166,6 +1168,7 @@ class OptionsLimitWebformHandler extends WebformHandlerBase implements WebformOp
+   protected function getOptionsLimits(array $values = []) {
+     $default_limit = $this->configuration['limits'][WebformOptionsLimitHandlerInterface::DEFAULT_LIMIT] ?? NULL;
+ 
++    $configuration_limits = WebformOptionsHelper::decodeConfig($this->configuration['limits']);
+     $totals = $this->getOptionsTotals($values);
+ 
+     $options = $this->getElementOptions();
+@@ -1175,8 +1178,8 @@ class OptionsLimitWebformHandler extends WebformHandlerBase implements WebformOp
+ 
+     $limits = [];
+     foreach ($options as $option_key => $option_label) {
+-      $limit = (isset($this->configuration['limits'][$option_key]))
+-        ? $this->configuration['limits'][$option_key]
++      $limit = (isset($configuration_limits[$option_key]))
++        ? $configuration_limits[$option_key]
+         : $default_limit;
+       $total = $totals[$option_key] ?? 0;
+       $limits[$option_key] = $this->getLimitInformation($option_label, $limit, $total);
