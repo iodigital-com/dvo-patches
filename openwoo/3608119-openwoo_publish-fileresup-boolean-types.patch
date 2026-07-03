@@ -1,0 +1,14 @@
+diff --git a/modules/openwoo_publish/src/Config/FileResupConfig.php b/modules/openwoo_publish/src/Config/FileResupConfig.php
+--- a/modules/openwoo_publish/src/Config/FileResupConfig.php
++++ b/modules/openwoo_publish/src/Config/FileResupConfig.php
+@@ -53,8 +53,8 @@ class FileResupConfig implements ConfigFactoryOverrideInterface {
+       $overrides['field.field.media.openwoo_attachment.field_openwoo_media_file'] = [
+         'third_party_settings' => [
+           'file_resup' => [
+-            'enabled' => $config->get('file_resup.enabled') ? 1 : 0,
+-            'auto_upload' => $config->get('file_resup.auto_upload') ? 1 : 0,
++            'enabled' => (bool) $config->get('file_resup.enabled'),
++            'auto_upload' => (bool) $config->get('file_resup.auto_upload'),
+             'max_upload_size' => $config->get('file_resup.max_upload_size') ?: '',
+           ],
+         ],

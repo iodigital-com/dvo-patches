@@ -1,0 +1,36 @@
+diff --git a/src/Form/FieldConfigFormAlter.php b/src/Form/FieldConfigFormAlter.php
+--- a/src/Form/FieldConfigFormAlter.php
++++ b/src/Form/FieldConfigFormAlter.php
+@@ -87,9 +87,9 @@ class FieldConfigFormAlter implements ContainerInjectionInterface {
+   public static function submit(&$form, FormStateInterface $form_state) {
+     $field_config = $form_state->getFormObject()->getEntity();
+     $settings = $form_state->getValue('resumable_upload')['settings'];
+-    $field_config->setThirdPartySetting('file_resup', 'enabled', $settings['enabled']);
++    $field_config->setThirdPartySetting('file_resup', 'enabled', (bool) $settings['enabled']);
+     $field_config->setThirdPartySetting('file_resup', 'max_upload_size', $settings['max_upload_size']);
+-    $field_config->setThirdPartySetting('file_resup', 'auto_upload', $settings['auto_upload']);
++    $field_config->setThirdPartySetting('file_resup', 'auto_upload', (bool) $settings['auto_upload']);
+     $field_config->save();
+   }
+
+diff --git a/src/Form/FileFormAlterBase.php b/src/Form/FileFormAlterBase.php
+--- a/src/Form/FileFormAlterBase.php
++++ b/src/Form/FileFormAlterBase.php
+@@ -105,7 +105,7 @@ abstract class FileFormAlterBase {
+
+
+     // Add autostart as a data attribute.
+-    if ($element['#file_resup_auto_upload'] === 1) {
++    if ($element['#file_resup_auto_upload'] == TRUE) {
+       $element['resup']['#attributes']['data-autostart'] = 'on';
+     }
+
+@@ -158,7 +158,7 @@ abstract class FileFormAlterBase {
+    *   Whether File Resumable Upload is enabled for this widget.
+    */
+   public function isEnabled($field_definition) {
+-    return method_exists($field_definition, 'getThirdPartySettings') && ($third_party_settings = $field_definition->getThirdPartySettings('file_resup')) && $third_party_settings['enabled'] === 1;
++    return method_exists($field_definition, 'getThirdPartySettings') && ($third_party_settings = $field_definition->getThirdPartySettings('file_resup')) && $third_party_settings['enabled'] == TRUE;
+   }
+
+   /**
