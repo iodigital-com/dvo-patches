@@ -1,5 +1,6 @@
---- config/schema/leaflet.schema.yml.orig	2026-07-03 07:47:17
-+++ config/schema/leaflet.schema.yml	2026-07-03 07:48:16
+diff --git a/config/schema/leaflet.schema.yml b/config/schema/leaflet.schema.yml
+--- a/config/schema/leaflet.schema.yml
++++ b/config/schema/leaflet.schema.yml
 @@ -338,6 +338,12 @@
          options:
            type: text
