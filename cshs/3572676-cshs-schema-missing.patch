@@ -1,0 +1,210 @@
+diff --git a/config/schema/cshs.schema.yml b/config/schema/cshs.schema.yml
+index 3b8f5f316e8eaca82c1b8c75466f8e3d39fe46a2..d0356962b31f861fa240a7176db6657c88bb714f 100644
+--- a/config/schema/cshs.schema.yml
++++ b/config/schema/cshs.schema.yml
+@@ -26,9 +26,10 @@ field.widget.settings.cshs:
+     allow_unpublished:
+       type: boolean
+       label: 'Allow unpublished term selections'
+-field.formatter.settings.cshs_group_by_root:
++
++cshs.field.formatter.settings.base:
+   type: mapping
+-  label: 'CSHS Group By Root settings'
++  label: 'CSHS base formatter settings'
+   mapping:
+     linked:
+       type: boolean
+@@ -36,6 +37,30 @@ field.formatter.settings.cshs_group_by_root:
+     reverse:
+       type: boolean
+       label: 'Reverse'
++
++field.formatter.settings.cshs_flexible_hierarchy:
++  type: cshs.field.formatter.settings.base
++  label: 'CSHS Flexible hierarchy settings'
++  mapping:
++    format:
++      type: string
++      label: 'Format'
++    clear:
++      type: boolean
++      label: 'Clear tokens'
++
++field.formatter.settings.cshs_full_hierarchy:
++  type: cshs.field.formatter.settings.base
++  label: 'CSHS Full hierarchy settings'
++  mapping:
++    separator:
++      type: string
++      label: 'Separator'
++
++field.formatter.settings.cshs_group_by_root:
++  type: cshs.field.formatter.settings.base
++  label: 'CSHS Group By Root settings'
++  mapping:
+     sort:
+       type: string
+       label: 'Sort'
+@@ -45,3 +70,11 @@ field.formatter.settings.cshs_group_by_root:
+     last_child:
+       type: boolean
+       label: 'Last child'
++
++field.formatter.settings.cshs_specific_level_taxonomy:
++  type: cshs.field.formatter.settings.base
++  label: 'CSHS Specific level taxonomy settings'
++  mapping:
++    level:
++      type: integer
++      label: 'Level'
+diff --git a/tests/src/Kernel/CshsSchemaTest.php b/tests/src/Kernel/CshsSchemaTest.php
+new file mode 100644
+index 0000000000000000000000000000000000000000..40aec05d0984bc680691656a9739e77e36c250e2
+--- /dev/null
++++ b/tests/src/Kernel/CshsSchemaTest.php
+@@ -0,0 +1,144 @@
++<?php
++
++use Drupal\Core\Entity\Display\EntityViewDisplayInterface;
++use Drupal\Core\Field\FieldStorageDefinitionInterface;
++use Drupal\KernelTests\KernelTestBase;
++use Drupal\taxonomy\Entity\Vocabulary;
++use Drupal\Tests\field\Traits\EntityReferenceFieldCreationTrait;
++use Drupal\Tests\node\Traits\ContentTypeCreationTrait;
++use PHPUnit\Framework\Attributes\DataProvider;
++use PHPUnit\Framework\Attributes\Group;
++use PHPUnit\Framework\Attributes\RunTestsInSeparateProcesses;
++
++/**
++ * Tests Cshs schema.
++ */
++#[Group('cshs')]
++#[RunTestsInSeparateProcesses]
++class CshsSchemaTest extends KernelTestBase {
++
++  use ContentTypeCreationTrait;
++  use EntityReferenceFieldCreationTrait;
++
++  /**
++   * {@inheritdoc}
++   */
++  protected static $modules = [
++    'system',
++    'user',
++    'field',
++    'node',
++    'text',
++    'filter',
++    'cshs',
++    'taxonomy',
++  ];
++
++  /**
++   * Display to test with.
++   *
++   * @var \Drupal\Core\Entity\Display\EntityViewDisplayInterface
++   */
++  protected EntityViewDisplayInterface $display;
++
++  /**
++   * {@inheritdoc}
++   */
++  protected function setUp(): void {
++    parent::setUp();
++
++    $this->installEntitySchema('node');
++    $this->installConfig(['node', 'filter', 'taxonomy']);
++    $this->installEntitySchema('user');
++    $this->installEntitySchema('taxonomy_term');
++
++    $this->createContentType([
++      'type' => 'article',
++    ]);
++
++    $vocabulary = Vocabulary::create([
++      'name' => 'Tags',
++      'vid' => 'tags',
++    ]);
++    $vocabulary->save();
++
++    $field_name = 'field_tags';
++    $handler_settings = [
++      'target_bundles' => [
++        $vocabulary->id() => $vocabulary->id(),
++      ],
++    ];
++
++    $this->createEntityReferenceField('node', 'article', $field_name, 'Tags', 'taxonomy_term', 'default', $handler_settings, FieldStorageDefinitionInterface::CARDINALITY_UNLIMITED);
++
++    $entityTypeManager = $this->container->get('entity_type.manager');
++    $this->display = $entityTypeManager
++      ->getStorage('entity_view_display')
++      ->load('node.article.default');
++  }
++
++  /**
++   * Test that a formatter and settings save without errors.
++   *
++   * @param string $formatterId
++   *   Field formatter plugin id.
++   * @param array $settings
++   *   Settings for the formatter.
++   *
++   * @throws \Drupal\Core\Entity\EntityStorageException
++   */
++  #[DataProvider('providerFieldFormatterSchema')]
++  public function testFieldFormatterSchema(string $formatterId, array $settings): void {
++
++    $this->display->setComponent('field_tags', [
++      'type' => $formatterId,
++      'settings' => $settings,
++    ]);
++
++    $this->display->save();
++  }
++
++  /**
++   * Data provider for ::testFieldFormatterSchema().
++   */
++  public static function providerFieldFormatterSchema(): array {
++    return [
++      [
++        'cshs_flexible_hierarchy',
++        [
++          'linked' => TRUE,
++          'reverse' => FALSE,
++          'format' => '[term:name]',
++          'clear' => TRUE,
++        ],
++      ],
++      [
++        'cshs_full_hierarchy',
++        [
++          'linked' => TRUE,
++          'reverse' => FALSE,
++          'separator' => ' » ',
++        ],
++      ],
++      [
++        'cshs_group_by_root',
++        [
++          'linked' => TRUE,
++          'reverse' => FALSE,
++          'sort' => 'None',
++          'depth' => 0,
++          'last_child' => FALSE,
++        ],
++      ],
++      [
++        'cshs_specific_level_taxonomy',
++        [
++          'linked' => TRUE,
++          'reverse' => FALSE,
++          'level' => 1,
++        ],
++      ],
++    ];
++  }
++
++}
