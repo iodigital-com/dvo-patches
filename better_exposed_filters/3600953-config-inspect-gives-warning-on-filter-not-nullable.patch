@@ -1,0 +1,11 @@
+diff --git a/config/schema/better_exposed_filters.exposed_form.schema.yml b/config/schema/better_exposed_filters.exposed_form.schema.yml
+--- a/config/schema/better_exposed_filters.exposed_form.schema.yml
++++ b/config/schema/better_exposed_filters.exposed_form.schema.yml
+@@ -28,6 +28,7 @@ views.exposed_form.bef:
+         filter:
+           type: sequence
+           label: 'Filters'
++          nullable: true
+           sequence:
+             type: better_exposed_filters.filter.[plugin_id]
+
