@@ -1,0 +1,26 @@
+diff --git a/src/Form/MenuManipulatorSettingsForm.php b/src/Form/MenuManipulatorSettingsForm.php
+--- a/src/Form/MenuManipulatorSettingsForm.php
++++ b/src/Form/MenuManipulatorSettingsForm.php
+@@ -215,6 +215,12 @@ class MenuManipulatorSettingsForm extends ConfigFormBase {
+   public function submitForm(array &$form, FormStateInterface $form_state) {
+     $config = $this->config('menu_manipulator.settings');
+
++    $boolean_keys = [
++      'preprocess_menus_language',
++      'preprocess_menus_language_use_entity',
++      'preprocess_menus_icon',
++    ];
++
+     $exclude = ['submit', 'form_build_id', 'form_token', 'form_id', 'op'];
+     $subvalues_as_string = [
+       'preprocess_menus_language_list',
+@@ -229,6 +235,9 @@ class MenuManipulatorSettingsForm extends ConfigFormBase {
+             }
+           }
+         }
++        if (in_array($key, $boolean_keys)) {
++          $data = (bool) $data;
++        }
+         $config->set($key, $data);
+       }
+     }
